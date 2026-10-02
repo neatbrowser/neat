@@ -2,8 +2,9 @@
 
 A browser built with WinUI 3 and WebView2, with a vertical tab sidebar.
 
-**Status:** phase W0, project skeleton. One window with a custom title bar and
-a single WebView2 that loads a test page.
+**Status:** phase W1, layout and risk tests. A full-height rounded sidebar, a
+rounded web frame, a command bar overlay drawn on top of the page, and a thin
+drag strip at the top right.
 
 ## Requirements
 
@@ -16,8 +17,8 @@ bundled, so nothing else needs to be installed to run a published build.
 ## Build
 
 ```powershell
-dotnet restore src/NeatBrowser/NeatBrowser.csproj -p:Platform=x64
-dotnet build   src/NeatBrowser/NeatBrowser.csproj -c Release --no-restore -p:Platform=x64
+dotnet restore src/neat/neat.csproj -p:Platform=x64
+dotnet build   src/neat/neat.csproj -c Release --no-restore -p:Platform=x64
 ```
 
 Always pass `-p:Platform=x64`.
@@ -25,16 +26,19 @@ Always pass `-p:Platform=x64`.
 ## Get a runnable build from GitHub
 
 Every push to `main` runs the **Build** workflow. Open the run on the
-**Actions** tab and download the `NeatBrowser-win-x64` artifact. Unzip it and
-run `NeatBrowser.exe`. The first restore is slow because the bundled
-WebView2 runtime is about 250 MB.
+**Actions** tab and download the `neat-win-x64` artifact. Unzip it and run
+`neat.exe`. The first restore is slow because the bundled WebView2 runtime is
+about 250 MB.
 
 ## Layout
 
+Folder and file names are lowercase, in the style of large browser codebases.
+
 ```
-src/NeatBrowser/
-  NeatBrowser.csproj     project (unpackaged, self-contained, x64)
-  App.xaml(.cs)          application entry
-  MainWindow.xaml(.cs)   main window
-  Browser/WebViewRuntime.cs   points WebView2 at the bundled runtime
+src/neat/
+  neat.csproj      project (unpackaged, self-contained, x64)
+  app.xaml(.cs)    application entry and look constants (radius, padding, background)
+  win.xaml(.cs)    main window
+  web/env.cs       points WebView2 at the bundled runtime
+  web/url.cs       turns typed text into a URL or a search
 ```

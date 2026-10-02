@@ -1,0 +1,50 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+
+    <AssemblyName>neat</AssemblyName>
+    <RootNamespace>neat</RootNamespace>
+    <Product>NEAT Browser</Product>
+    <Version>0.0.2</Version>
+
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+
+    <!-- x64 only for now: the bundled Fixed Version WebView2 runtime below
+         is the x64 build. Always build with -p:Platform=x64. -->
+    <Platforms>x64</Platforms>
+    <PlatformTarget>x64</PlatformTarget>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+
+    <UseWinUI>true</UseWinUI>
+    <EnableMsixTooling>true</EnableMsixTooling>
+
+    <!-- Unpackaged + self-contained: a plain folder with neat.exe that
+         runs without MSIX packaging and without a separately installed
+         Windows App Runtime or .NET runtime. -->
+    <WindowsPackageType>None</WindowsPackageType>
+    <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+    <SelfContained>true</SelfContained>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Windows App SDK 1.8.12. Pinned to an exact version on purpose so
+         builds are reproducible. Newer 2.x releases exist; moving up is a
+         separate, deliberate step once the basics work. The metapackage
+         brings in the WinUI 3 WebView2 control, the Windows SDK build tools
+         and CsWinRT transitively, so none of those are listed here. -->
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260921001" />
+
+    <!-- Fixed Version WebView2 runtime, bundled next to neat.exe in a
+         "WebView2" folder (copied automatically on build/publish). Same
+         community package and version Mozart uses. It is large (~250 MB), so
+         the first restore is slow; that is expected. See
+         web/env.cs for how the app points WebView2 at it. -->
+    <PackageReference Include="WebView2.Runtime.X64" Version="151.0.4129.86" />
+  </ItemGroup>
+
+</Project>
