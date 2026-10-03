@@ -4,7 +4,11 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:n="using:neat">
 
-    <Grid x:Name="root" Background="{StaticResource bg}" RequestedTheme="Dark">
+    <Grid
+        x:Name="root"
+        Background="{StaticResource bg}"
+        RequestedTheme="Dark"
+        KeyboardAcceleratorPlacementMode="Hidden">
         <Grid.RowDefinitions>
             <RowDefinition Height="32"/>
             <RowDefinition Height="*"/>
@@ -166,7 +170,9 @@
                  beside the page, hidden, or floating over the page while the
                  pointer is at the left edge. It lives in a layer spanning both
                  columns so it can overlap the page; column 0 only reserves its
-                 space while docked. -->
+                 space while docked. Docked, it has no panel of its own: the
+                 window gradient runs straight from the title bar through it.
+                 Only the floating sidebar gets a solid, bordered panel. -->
             <Border
                 x:Name="side"
                 Grid.ColumnSpan="2"
@@ -175,9 +181,9 @@
                 Margin="{StaticResource pad}"
                 Padding="10"
                 CornerRadius="{StaticResource r_side}"
-                BorderBrush="#33FFFFFF"
+                BorderBrush="Transparent"
                 BorderThickness="1"
-                Background="#26FFFFFF"
+                Background="Transparent"
                 PointerEntered="side_In"
                 PointerExited="side_Out">
                 <Grid RowSpacing="8">

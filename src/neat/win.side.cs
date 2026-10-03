@@ -20,9 +20,11 @@ public sealed partial class Win
     private const double SideW = 260;   // column reserved while docked (panel + margins)
     private const int Wait = 350;       // ms the pointer may be away before a peek closes
 
-    // Frosted over the gradient when docked; near-solid when floating over a page.
-    private readonly SolidColorBrush _glass = new(ColorHelper.FromArgb(0x26, 0xFF, 0xFF, 0xFF));
+    // Docked, the sidebar is just the window gradient (no panel). Floating over
+    // a page it needs a near-solid panel and an edge, or the page would show through.
+    private readonly SolidColorBrush _clear = new(Colors.Transparent);
     private readonly SolidColorBrush _solid = new(ColorHelper.FromArgb(0xF2, 0x26, 0x23, 0x2D));
+    private readonly SolidColorBrush _edge = new(ColorHelper.FromArgb(0x33, 0xFF, 0xFF, 0xFF));
 
     private bool _dock = true;
     private bool _peek;
@@ -84,7 +86,8 @@ public sealed partial class Win
 
         side.Opacity = shown ? 1 : 0;
         side.IsHitTestVisible = shown;
-        side.Background = _dock ? _glass : _solid;
+        side.Background = _dock ? _clear : _solid;
+        side.BorderBrush = _dock ? _clear : _edge;
 
         // With no sidebar beside it the page gets a margin on the left too.
         frame.Margin = new Thickness(_dock ? 0 : 6, 0, 6, 6);

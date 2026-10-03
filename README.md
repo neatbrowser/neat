@@ -2,7 +2,7 @@
 
 A browser built with WinUI 3 and WebView2, with a vertical tab sidebar.
 
-**Status:** phase W4.1, Arc-style title bar. A title bar that is always
+**Status:** phase W4.1, Arc-style title bar (docked sidebar has no panel; only the floating one does). A title bar that is always
 visible holds the logo, the sidebar toggle, back / forward / reload and an
 address chip (copy link, domain, bookmark star). The sidebar below it keeps
 only New Tab and the tab list. Typing an address is for now done through the
