@@ -21,10 +21,20 @@ public sealed partial class Win
     private const int Wait = 350;       // ms the pointer may be away before a peek closes
 
     // Docked, the sidebar is just the window gradient (no panel). Floating over
-    // a page it needs a near-solid panel and an edge, or the page would show through.
+    // a page it needs an opaque panel and an edge, or the page would show through.
     private readonly SolidColorBrush _clear = new(Colors.Transparent);
-    private readonly SolidColorBrush _solid = new(ColorHelper.FromArgb(0xF2, 0x26, 0x23, 0x2D));
     private readonly SolidColorBrush _edge = new(ColorHelper.FromArgb(0x33, 0xFF, 0xFF, 0xFF));
+
+    // Used only if the window background is not a gradient (so there is nothing to copy).
+    private readonly SolidColorBrush _solid = new(ColorHelper.FromArgb(0xFF, 0x26, 0x23, 0x2D));
+
+    // The floating panel's brush: the window gradient, re-mapped so a given spot
+    // on the panel has exactly the colour the window has at that spot.
+    private readonly LinearGradientBrush _pan = new() { MappingMode = BrushMappingMode.Absolute };
+
+    // Corner radii from app.xaml, read once: sidebar panel and web frame.
+    private double _rs;
+    private double _rw;
 
     private bool _dock = true;
     private bool _peek;
@@ -34,8 +44,18 @@ public sealed partial class Win
 
     private void SideInit()
     {
+        _rs = side.CornerRadius.TopLeft;
+        _rw = frame.CornerRadius.TopLeft;
+
         _dock = App.Cfg.Cur.Dock;
         Layout();
+
+        // The panel's colours depend on the window size, so keep them in step.
+        root.SizeChanged += (s, e) =>
+        {
+            if (!_dock)
+                side.Background = PeekBrush();
+        };
 
         // Animations are switched on only after the first Layout(), so the
         // window does not play a fade at startup.
@@ -86,11 +106,60 @@ public sealed partial class Win
 
         side.Opacity = shown ? 1 : 0;
         side.IsHitTestVisible = shown;
-        side.Background = _dock ? _clear : _solid;
-        side.BorderBrush = _dock ? _clear : _edge;
+
+        if (_dock)
+        {
+            // No panel: the window gradient shows straight through.
+            side.Margin = new Thickness(6);
+            side.Padding = new Thickness(10);
+            side.CornerRadius = new CornerRadius(_rs);
+            side.Background = _clear;
+            side.BorderBrush = _clear;
+        }
+        else
+        {
+            // A drawer hanging from the title bar. It starts exactly where the
+            // page starts (no top margin, so no strip of page shows above it),
+            // and its left corners copy the page frame's corners so the two
+            // line up. The extra top padding keeps the content where it is
+            // when docked.
+            side.Margin = new Thickness(6, 0, 6, 6);
+            side.Padding = new Thickness(10, 16, 10, 10);
+            side.CornerRadius = new CornerRadius(_rw, 0, _rs, _rw);
+            side.Background = PeekBrush();
+            side.BorderBrush = _edge;
+        }
 
         // With no sidebar beside it the page gets a margin on the left too.
         frame.Margin = new Thickness(_dock ? 0 : 6, 0, 6, 6);
+    }
+
+    /// <summary>
+    /// The floating panel's background: the window gradient, opaque. A brush
+    /// normally stretches over the element it paints, which would give the
+    /// narrow panel a different colour than the window has at the same spot. So
+    /// the colours are copied and the gradient line is expressed in the window's
+    /// coordinates, shifted to where the panel sits.
+    /// </summary>
+    private Brush PeekBrush()
+    {
+        if (root.Background is not LinearGradientBrush g || root.ActualWidth <= 0 || root.ActualHeight <= 0)
+            return _solid;
+
+        _pan.GradientStops.Clear();
+        foreach (var st in g.GradientStops)
+            _pan.GradientStops.Add(new GradientStop { Color = st.Color, Offset = st.Offset });
+
+        // Where the panel's top-left corner sits in the window.
+        var x = side.Margin.Left;
+        var y = bar.ActualHeight + side.Margin.Top;
+
+        var w = root.ActualWidth;
+        var h = root.ActualHeight;
+        _pan.StartPoint = new Windows.Foundation.Point(g.StartPoint.X * w - x, g.StartPoint.Y * h - y);
+        _pan.EndPoint = new Windows.Foundation.Point(g.EndPoint.X * w - x, g.EndPoint.Y * h - y);
+
+        return _pan;
     }
 
     private void SetDock(bool on)
