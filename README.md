@@ -2,9 +2,9 @@
 
 A browser built with WinUI 3 and WebView2, with a vertical tab sidebar.
 
-**Status:** phase W1, layout and risk tests. A full-height rounded sidebar, a
-rounded web frame, a command bar overlay drawn on top of the page, and a thin
-drag strip at the top right.
+**Status:** phase W2, tab core. Open, switch and close tabs; each tab has its
+own web view, title and favicon; links that ask for a new window open as tabs;
+the command bar overlay opens its result in a new tab.
 
 ## Requirements
 
@@ -41,4 +41,5 @@ src/neat/
   win.xaml(.cs)    main window
   web/env.cs       points WebView2 at the bundled runtime
   web/url.cs       turns typed text into a URL or a search
+  web/tab.cs       one tab: its web view, title, address and favicon
 ```

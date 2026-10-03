@@ -1,6 +1,9 @@
+using System.Collections.ObjectModel;
 using Microsoft.UI;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
+using Microsoft.Web.WebView2.Core;
 using Windows.Graphics;
 using Windows.System;
 
@@ -9,6 +12,9 @@ namespace neat;
 public sealed partial class Win : Window
 {
     private const string Home = "https://example.com";
+
+    private readonly ObservableCollection<Tab> _tabs = new();
+    private Tab? _cur;
 
     public Win()
     {
@@ -26,55 +32,157 @@ public sealed partial class Win : Window
         bar.ButtonBackgroundColor = Colors.Transparent;
         bar.ButtonInactiveBackgroundColor = Colors.Transparent;
 
-        // WebView2 can only start once the control is in the visual tree.
+        list.ItemsSource = _tabs;
+
+        // The first tab opens once the window is up.
         root.Loaded += OnLoaded;
     }
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
-        try
-        {
-            await web.EnsureCoreWebView2Async();
+        var tab = await Open(Home);
 
-            var ver = web.CoreWebView2.Environment.BrowserVersionString;
+        var core = tab.View.CoreWebView2;
+        if (core is not null)
+        {
+            var ver = core.Environment.BrowserVersionString;
             var src = Env.UsesFixed ? "bundled runtime" : "system runtime";
             info.Text = $"WebView2 {ver} ({src})";
+        }
+    }
 
-            web.CoreWebView2.Navigate(Home);
+    // ---- tabs ----
+
+    /// <summary>Opens a new tab, selects it and starts loading the address.</summary>
+    private async Task<Tab> Open(string? url)
+    {
+        var tab = new Tab(new WebView2());
+        host.Children.Add(tab.View);
+        _tabs.Add(tab);
+        Pick(tab);
+
+        try
+        {
+            await tab.View.EnsureCoreWebView2Async();
         }
         catch (Exception ex)
         {
             // No debugger in the loop yet, so show failures on screen.
-            info.Text = "WebView2 failed to start: " + ex.Message;
+            tab.Title = "WebView2 failed: " + ex.Message;
+            return tab;
         }
+
+        var core = tab.View.CoreWebView2;
+        Hook(tab, core);
+        core.Navigate(url ?? Home);
+        return tab;
     }
 
-    // ---- navigation ----
+    /// <summary>Keeps a tab's sidebar row and the address box in step with its page.</summary>
+    private void Hook(Tab tab, CoreWebView2 core)
+    {
+        core.DocumentTitleChanged += (s, e) =>
+        {
+            var title = core.DocumentTitle;
+            tab.Title = string.IsNullOrEmpty(title) ? core.Source : title;
+        };
+
+        core.SourceChanged += (s, e) =>
+        {
+            tab.Src = core.Source;
+            if (tab == _cur)
+                addr.Text = tab.Src;
+        };
+
+        core.FaviconChanged += (s, e) => tab.SetIcon(core.FaviconUri);
+
+        // Links that ask for a new window (target=_blank, ctrl+click) become new tabs.
+        core.NewWindowRequested += (s, e) =>
+        {
+            e.Handled = true;
+            _ = Open(e.Uri);
+        };
+
+        // window.close() from the page closes its tab. Deferred, because the
+        // view must not be torn down from inside its own event.
+        core.WindowCloseRequested += (s, e) =>
+            DispatcherQueue.TryEnqueue(() => Shut(tab));
+    }
+
+    /// <summary>Makes a tab the visible one.</summary>
+    private void Pick(Tab tab)
+    {
+        _cur = tab;
+
+        if (list.SelectedItem != tab)
+            list.SelectedItem = tab;
+
+        foreach (var t in _tabs)
+            t.View.Visibility = t == tab ? Visibility.Visible : Visibility.Collapsed;
+
+        addr.Text = tab.Src;
+    }
+
+    /// <summary>Closes a tab. Closing the last one closes the window.</summary>
+    private void Shut(Tab tab)
+    {
+        var i = _tabs.IndexOf(tab);
+        if (i < 0)
+            return;
+
+        if (_tabs.Count == 1)
+        {
+            Close();
+            return;
+        }
+
+        host.Children.Remove(tab.View);
+        _tabs.RemoveAt(i);
+        tab.View.Close();
+
+        if (tab == _cur)
+            Pick(_tabs[Math.Min(i, _tabs.Count - 1)]);
+    }
+
+    private void list_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (list.SelectedItem is Tab tab && tab != _cur)
+            Pick(tab);
+    }
+
+    private void shut_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement el && el.DataContext is Tab tab)
+            Shut(tab);
+    }
+
+    // ---- navigation (always acts on the selected tab) ----
 
     private void Go(string? text)
     {
         var url = Url.Fix(text);
-        if (url is null || web.CoreWebView2 is null)
+        var core = _cur?.View.CoreWebView2;
+        if (url is null || core is null)
             return;
 
-        web.CoreWebView2.Navigate(url);
+        core.Navigate(url);
     }
 
     private void back_Click(object sender, RoutedEventArgs e)
     {
-        if (web.CanGoBack)
-            web.GoBack();
+        if (_cur is { View.CanGoBack: true })
+            _cur.View.GoBack();
     }
 
     private void fwd_Click(object sender, RoutedEventArgs e)
     {
-        if (web.CanGoForward)
-            web.GoForward();
+        if (_cur is { View.CanGoForward: true })
+            _cur.View.GoForward();
     }
 
     private void reload_Click(object sender, RoutedEventArgs e)
     {
-        web.Reload();
+        _cur?.View.Reload();
     }
 
     private void addr_KeyDown(object sender, KeyRoutedEventArgs e)
@@ -83,7 +191,7 @@ public sealed partial class Win : Window
             return;
 
         Go(addr.Text);
-        web.Focus(FocusState.Programmatic);
+        _cur?.View.Focus(FocusState.Programmatic);
     }
 
     // ---- command bar overlay ----
@@ -126,9 +234,12 @@ public sealed partial class Win : Window
         }
         else if (e.Key == VirtualKey.Enter)
         {
-            var text = q.Text;
+            // Enter in the command bar opens the result in a NEW tab.
+            var url = Url.Fix(q.Text);
             HideBar();
-            Go(text);
+
+            if (url is not null)
+                _ = Open(url);
         }
     }
 }

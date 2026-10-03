@@ -1,7 +1,8 @@
 <Window
     x:Class="neat.Win"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:n="using:neat">
 
     <Grid x:Name="root" Background="{StaticResource bg}" RequestedTheme="Dark">
         <Grid.ColumnDefinitions>
@@ -60,10 +61,51 @@
                     </StackPanel>
                 </Button>
 
-                <!-- Placeholder rows; the real tab list arrives in W2. -->
-                <StackPanel Grid.Row="3" Spacing="2">
-                    <TextBlock Text="Tabs go here (W2)" Opacity="0.5" Margin="10,6"/>
-                </StackPanel>
+                <!-- One row per open tab. Selecting a row shows that tab. -->
+                <ListView
+                    x:Name="list"
+                    Grid.Row="3"
+                    SelectionMode="Single"
+                    SelectionChanged="list_SelectionChanged">
+                    <ListView.ItemTemplate>
+                        <DataTemplate x:DataType="n:Tab">
+                            <Grid Height="36" ColumnSpacing="10">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="18"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+
+                                <Image
+                                    Width="16"
+                                    Height="16"
+                                    Source="{x:Bind Icon, Mode=OneWay}"
+                                    Visibility="{x:Bind IconVis, Mode=OneWay}"/>
+                                <FontIcon
+                                    Glyph="&#xE774;"
+                                    FontSize="14"
+                                    Visibility="{x:Bind GlyphVis, Mode=OneWay}"/>
+
+                                <TextBlock
+                                    Grid.Column="1"
+                                    VerticalAlignment="Center"
+                                    TextTrimming="CharacterEllipsis"
+                                    Text="{x:Bind Title, Mode=OneWay}"/>
+
+                                <Button
+                                    Grid.Column="2"
+                                    Width="28"
+                                    Height="28"
+                                    Padding="0"
+                                    Background="Transparent"
+                                    BorderThickness="0"
+                                    Click="shut_Click">
+                                    <FontIcon Glyph="&#xE711;" FontSize="10"/>
+                                </Button>
+                            </Grid>
+                        </DataTemplate>
+                    </ListView.ItemTemplate>
+                </ListView>
 
                 <TextBlock
                     x:Name="info"
@@ -92,7 +134,8 @@
                 Margin="0,0,6,6"
                 CornerRadius="{StaticResource r_web}"
                 Background="#FF0F0F0F">
-                <WebView2 x:Name="web"/>
+                <!-- Every tab's web view lives here; only the selected one is visible. -->
+                <Grid x:Name="host"/>
             </Border>
         </Grid>
 
