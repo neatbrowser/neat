@@ -2,9 +2,9 @@
 
 A browser built with WinUI 3 and WebView2, with a vertical tab sidebar.
 
-**Status:** phase W2, tab core. Open, switch and close tabs; each tab has its
-own web view, title and favicon; links that ask for a new window open as tabs;
-the command bar overlay opens its result in a new tab.
+**Status:** phase W3, data layer. Settings, search engines, history and
+bookmarks are in place under the existing tab core. Nothing here has its own
+window yet; the Settings and Library windows come in later phases.
 
 ## Requirements
 
@@ -37,9 +37,23 @@ Folder and file names are lowercase, in the style of large browser codebases.
 ```
 src/neat/
   neat.csproj      project (unpackaged, self-contained, x64)
-  app.xaml(.cs)    application entry and look constants (radius, padding, background)
+  app.xaml(.cs)    application entry, look constants, shared services
   win.xaml(.cs)    main window
-  web/env.cs       points WebView2 at the bundled runtime
-  web/url.cs       turns typed text into a URL or a search
+  web/env.cs       app folders; points WebView2 at the bundled runtime
   web/tab.cs       one tab: its web view, title, address and favicon
+  data/prefs.cs    what settings.json holds (home page, search engines, window size)
+  data/store.cs    loads and saves settings.json
+  data/search.cs   turns typed text into an address or a search
+  data/db.cs       connections to browser.db
+  data/history.cs  history table
+  data/marks.cs    bookmarks table (flat list, no folders yet)
 ```
+
+## Where data is saved
+
+Everything is under `%LOCALAPPDATA%\NEAT\`: `settings.json`, `browser.db`
+(history and bookmarks) and the `WebView2Profile` folder.
+
+To change the search engine used for plain text typed in the address box, set
+`"Use"` in `settings.json` to one of the engine names listed there (for example
+`"Bing"`), with the browser closed.

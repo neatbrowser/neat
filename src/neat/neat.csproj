@@ -45,6 +45,9 @@
          the first restore is slow; that is expected. See
          web/env.cs for how the app points WebView2 at it. -->
     <PackageReference Include="WebView2.Runtime.X64" Version="151.0.4129.86" />
+
+    <!-- SQLite for history and bookmarks (browser.db). Same version Mozart uses. -->
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.8" />
   </ItemGroup>
 
 </Project>

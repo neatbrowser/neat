@@ -72,9 +72,14 @@ public sealed class Tab : INotifyPropertyChanged
     /// <summary>Until then (or if it fails to load) a globe glyph stands in.</summary>
     public Visibility GlyphVis => _icon is null ? Visibility.Visible : Visibility.Collapsed;
 
+    /// <summary>Address of the favicon, kept for history and bookmarks.</summary>
+    public string? IconSrc { get; private set; }
+
     /// <summary>Loads the favicon from the address WebView2 reports for the page.</summary>
     public void SetIcon(string? uri)
     {
+        IconSrc = string.IsNullOrEmpty(uri) ? null : uri;
+
         if (string.IsNullOrEmpty(uri) || !Uri.TryCreate(uri, UriKind.Absolute, out var u))
         {
             Icon = null;

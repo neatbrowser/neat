@@ -37,6 +37,9 @@
                     <Button x:Name="reload" Click="reload_Click" Background="Transparent" BorderThickness="0">
                         <FontIcon Glyph="&#xE72C;" FontSize="14"/>
                     </Button>
+                    <Button x:Name="star" Click="star_Click" Background="Transparent" BorderThickness="0">
+                        <FontIcon x:Name="staric" Glyph="&#xE734;" FontSize="14"/>
+                    </Button>
                 </StackPanel>
 
                 <!-- Address box. Also the first typing test: try Vietnamese (Telex/VNI). -->

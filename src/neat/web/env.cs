@@ -20,6 +20,11 @@ internal static class Env
     /// <summary>Folder holding the bundled runtime, or null when not bundled.</summary>
     public static string? Fixed { get; private set; }
 
+    /// <summary>Per-user folder for everything the app saves (settings, database, profile).</summary>
+    public static string Root { get; } = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "NEAT");
+
     /// <summary>Folder where WebView2 keeps cookies, cache and other profile data.</summary>
     public static string Data { get; private set; } = string.Empty;
 
@@ -36,10 +41,7 @@ internal static class Env
 
         // Per-user and always writable, even when the app is installed under
         // Program Files (WebView2's default would be next to the .exe).
-        Data = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "NEAT",
-            "WebView2Profile");
+        Data = Path.Combine(Root, "WebView2Profile");
 
         Directory.CreateDirectory(Data);
         Environment.SetEnvironmentVariable("WEBVIEW2_USER_DATA_FOLDER", Data);

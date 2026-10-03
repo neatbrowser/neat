@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using Microsoft.UI;
+using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
@@ -11,17 +12,19 @@ namespace neat;
 
 public sealed partial class Win : Window
 {
-    private const string Home = "https://example.com";
-
     private readonly ObservableCollection<Tab> _tabs = new();
     private Tab? _cur;
+    private string _ver = string.Empty;
 
     public Win()
     {
         InitializeComponent();
 
         Title = "NEAT Browser";
-        AppWindow.Resize(new SizeInt32(1280, 800));
+
+        var geo = App.Cfg.Cur.Geo;
+        AppWindow.Resize(new SizeInt32(geo.W, geo.H));
+        Closed += OnClosed;
 
         // Draw our own title bar: content extends to the top edge and the thin
         // strip in the content column is the drag area. Caption buttons stay
@@ -40,15 +43,40 @@ public sealed partial class Win : Window
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
-        var tab = await Open(Home);
+        if (App.Cfg.Cur.Geo.Max && AppWindow.Presenter is OverlappedPresenter p)
+            p.Maximize();
+
+        var tab = await Open(App.Cfg.Cur.Home);
 
         var core = tab.View.CoreWebView2;
         if (core is not null)
         {
             var ver = core.Environment.BrowserVersionString;
             var src = Env.UsesFixed ? "bundled runtime" : "system runtime";
-            info.Text = $"WebView2 {ver} ({src})";
+            _ver = $"WebView2 {ver} ({src})";
         }
+
+        await Stats();
+    }
+
+    /// <summary>Remembers the window size (and whether it was maximized) for next time.</summary>
+    private void OnClosed(object sender, WindowEventArgs e)
+    {
+        if (AppWindow.Presenter is not OverlappedPresenter p)
+            return;
+
+        var geo = App.Cfg.Cur.Geo;
+        geo.Max = p.State == OverlappedPresenterState.Maximized;
+
+        // Only a normal window has a size worth keeping; a maximized or
+        // minimized one would save the wrong numbers.
+        if (p.State == OverlappedPresenterState.Restored)
+        {
+            geo.W = AppWindow.Size.Width;
+            geo.H = AppWindow.Size.Height;
+        }
+
+        App.Cfg.Save();
     }
 
     // ---- tabs ----
@@ -74,7 +102,11 @@ public sealed partial class Win : Window
 
         var core = tab.View.CoreWebView2;
         Hook(tab, core);
-        core.Navigate(url ?? Home);
+
+        var to = App.Find.Resolve(url ?? App.Cfg.Cur.Home);
+        if (to is not null)
+            core.Navigate(to);
+
         return tab;
     }
 
@@ -91,7 +123,23 @@ public sealed partial class Win : Window
         {
             tab.Src = core.Source;
             if (tab == _cur)
+            {
                 addr.Text = tab.Src;
+                _ = Star();
+            }
+        };
+
+        // Every page that finishes loading is recorded in history.
+        core.NavigationCompleted += async (s, e) =>
+        {
+            var url = core.Source;
+            var web = url.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+                || url.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
+            if (!e.IsSuccess || !web)
+                return;
+
+            await App.Hist.Add(url, core.DocumentTitle, tab.IconSrc);
+            await Stats();
         };
 
         core.FaviconChanged += (s, e) => tab.SetIcon(core.FaviconUri);
@@ -121,6 +169,7 @@ public sealed partial class Win : Window
             t.View.Visibility = t == tab ? Visibility.Visible : Visibility.Collapsed;
 
         addr.Text = tab.Src;
+        _ = Star();
     }
 
     /// <summary>Closes a tab. Closing the last one closes the window.</summary>
@@ -160,7 +209,7 @@ public sealed partial class Win : Window
 
     private void Go(string? text)
     {
-        var url = Url.Fix(text);
+        var url = App.Find.Resolve(text);
         var core = _cur?.View.CoreWebView2;
         if (url is null || core is null)
             return;
@@ -192,6 +241,69 @@ public sealed partial class Win : Window
 
         Go(addr.Text);
         _cur?.View.Focus(FocusState.Programmatic);
+    }
+
+    // ---- bookmarks and stats ----
+
+    /// <summary>Shows a filled star when the selected tab's page is bookmarked.</summary>
+    private async Task Star()
+    {
+        var url = _cur?.Src;
+        var on = false;
+
+        try
+        {
+            on = !string.IsNullOrEmpty(url) && await App.Marks.Has(url);
+        }
+        catch (Exception)
+        {
+            // Treated as "not bookmarked"; Stats() reports database problems.
+        }
+
+        // The user may have switched tabs while the lookup ran.
+        if (url == _cur?.Src)
+            staric.Glyph = on ? "\uE735" : "\uE734";
+    }
+
+    private async void star_Click(object sender, RoutedEventArgs e)
+    {
+        var tab = _cur;
+        if (tab is null || string.IsNullOrEmpty(tab.Src))
+            return;
+
+        try
+        {
+            if (await App.Marks.Has(tab.Src))
+                await App.Marks.Remove(tab.Src);
+            else
+                await App.Marks.Add(tab.Src, tab.Title, tab.IconSrc);
+        }
+        catch (Exception ex)
+        {
+            info.Text = _ver + "\nbookmark failed: " + ex.Message;
+            return;
+        }
+
+        await Star();
+        await Stats();
+    }
+
+    /// <summary>
+    /// Temporary footer line so the new data layer can be seen working: how
+    /// many pages are in history and how many are bookmarked.
+    /// </summary>
+    private async Task Stats()
+    {
+        try
+        {
+            var h = await App.Hist.Count();
+            var m = await App.Marks.Count();
+            info.Text = $"{_ver}\nhistory {h}  |  bookmarks {m}";
+        }
+        catch (Exception ex)
+        {
+            info.Text = _ver + "\ndata error: " + ex.Message;
+        }
     }
 
     // ---- command bar overlay ----
@@ -235,7 +347,7 @@ public sealed partial class Win : Window
         else if (e.Key == VirtualKey.Enter)
         {
             // Enter in the command bar opens the result in a NEW tab.
-            var url = Url.Fix(q.Text);
+            var url = App.Find.Resolve(q.Text);
             HideBar();
 
             if (url is not null)
