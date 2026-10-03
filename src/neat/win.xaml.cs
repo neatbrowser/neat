@@ -26,14 +26,7 @@ public sealed partial class Win : Window
         AppWindow.Resize(new SizeInt32(geo.W, geo.H));
         Closed += OnClosed;
 
-        // Draw our own title bar: content extends to the top edge and the thin
-        // strip in the content column is the drag area. Caption buttons stay
-        // system drawn, made transparent so they sit on our background.
-        ExtendsContentIntoTitleBar = true;
-        SetTitleBar(drag);
-        var bar = AppWindow.TitleBar;
-        bar.ButtonBackgroundColor = Colors.Transparent;
-        bar.ButtonInactiveBackgroundColor = Colors.Transparent;
+        BarInit();
 
         list.ItemsSource = _tabs;
         SideInit();
@@ -125,7 +118,7 @@ public sealed partial class Win : Window
             tab.Src = core.Source;
             if (tab == _cur)
             {
-                addr.Text = tab.Src;
+                ShowDom(tab);
                 _ = Star();
             }
         };
@@ -169,7 +162,7 @@ public sealed partial class Win : Window
         foreach (var t in _tabs)
             t.View.Visibility = t == tab ? Visibility.Visible : Visibility.Collapsed;
 
-        addr.Text = tab.Src;
+        ShowDom(tab);
         _ = Star();
     }
 
@@ -206,17 +199,7 @@ public sealed partial class Win : Window
             Shut(tab);
     }
 
-    // ---- navigation (always acts on the selected tab) ----
-
-    private void Go(string? text)
-    {
-        var url = App.Find.Resolve(text);
-        var core = _cur?.View.CoreWebView2;
-        if (url is null || core is null)
-            return;
-
-        core.Navigate(url);
-    }
+    // ---- navigation buttons (always act on the selected tab) ----
 
     private void back_Click(object sender, RoutedEventArgs e)
     {
@@ -233,15 +216,6 @@ public sealed partial class Win : Window
     private void reload_Click(object sender, RoutedEventArgs e)
     {
         _cur?.View.Reload();
-    }
-
-    private void addr_KeyDown(object sender, KeyRoutedEventArgs e)
-    {
-        if (e.Key != VirtualKey.Enter)
-            return;
-
-        Go(addr.Text);
-        _cur?.View.Focus(FocusState.Programmatic);
     }
 
     // ---- bookmarks and stats ----

@@ -2,10 +2,12 @@
 
 A browser built with WinUI 3 and WebView2, with a vertical tab sidebar.
 
-**Status:** phase W4, sidebar. The sidebar can be docked or hidden (Ctrl+S or
-the button at the top left); while hidden it floats over the page when the
-pointer rests on the left edge. Tab rows are soft pills with a close button on
-hover.
+**Status:** phase W4.1, Arc-style title bar. A title bar that is always
+visible holds the logo, the sidebar toggle, back / forward / reload and an
+address chip (copy link, domain, bookmark star). The sidebar below it keeps
+only New Tab and the tab list. Typing an address is for now done through the
+New Tab command bar, which opens a new tab; editing the current tab's address
+comes in W4.2.
 
 ## Requirements
 
@@ -41,6 +43,7 @@ src/neat/
   app.xaml(.cs)    application entry, look constants, shared services
   win.xaml(.cs)    main window: tabs, navigation, bookmarks, command bar
   win.side.cs      sidebar states (docked, hidden, peeking) and tab row look
+  win.bar.cs       title bar: click-through regions, address chip, copy link
   web/env.cs       app folders; points WebView2 at the bundled runtime
   web/tab.cs       one tab: its web view, title, address and favicon
   data/prefs.cs    what settings.json holds (home page, search engines, window size)

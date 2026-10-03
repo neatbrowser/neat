@@ -48,20 +48,15 @@ public sealed partial class Win
         {
             t.Stop();
 
-            // Stay open while the pointer is on the sidebar, or while the
-            // address box is being typed in.
-            if (_peek && !_inSide && !_inHot && addr.FocusState == FocusState.Unfocused)
+            // Stay open while the pointer is on the sidebar or the left edge.
+            if (_peek && !_inSide && !_inHot)
                 Peek(false);
         };
 
-        // When the address box loses focus (say, Enter moved focus to the
-        // page) a peek that was kept open can close.
-        addr.LostFocus += (s, e) => Leave();
-
         list.ContainerContentChanging += OnRow;
 
-        // Work only while focus is in the sidebar or the chrome. Whether they
-        // also fire with focus inside a web page is what W5 will find out.
+        // These work while focus is in the sidebar or the title bar. Whether
+        // they also fire with focus inside a web page is what W5 will find out.
         Accel(VirtualKey.S, VirtualKeyModifiers.Control, () => SetDock(!_dock));
         Accel(VirtualKey.S, VirtualKeyModifiers.Control | VirtualKeyModifiers.Menu, () => Peek(!_peek));
     }
@@ -91,12 +86,8 @@ public sealed partial class Win
         side.IsHitTestVisible = shown;
         side.Background = _dock ? _glass : _solid;
 
-        // Hidden: the title strip starts after the toggle button and the page
-        // gets a margin on the left too. The toggle moves up into the strip so
-        // it does not sit on the page.
-        drag.Margin = new Thickness(_dock ? 0 : 44, 0, 0, 0);
+        // With no sidebar beside it the page gets a margin on the left too.
         frame.Margin = new Thickness(_dock ? 0 : 6, 0, 6, 6);
-        tog.Margin = _dock ? new Thickness(16, 16, 0, 0) : new Thickness(8, 0, 0, 0);
     }
 
     private void SetDock(bool on)
