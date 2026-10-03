@@ -1,5 +1,4 @@
 using Microsoft.UI;
-using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
@@ -29,7 +28,7 @@ public sealed partial class Win
     private bool _peek;
     private bool _inSide;
     private bool _inHot;
-    private DispatcherQueueTimer? _timer;
+    private Microsoft.UI.Dispatching.DispatcherQueueTimer? _timer;
 
     private void SideInit()
     {
