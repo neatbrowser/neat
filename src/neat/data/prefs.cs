@@ -44,4 +44,7 @@ public sealed class Prefs
     public List<Engine> Engines { get; set; } = Engine.Defaults();
 
     public Geo Geo { get; set; } = new();
+
+    /// <summary>True when the sidebar is docked beside the page, false when it is hidden.</summary>
+    public bool Dock { get; set; } = true;
 }

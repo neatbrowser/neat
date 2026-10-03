@@ -6,17 +6,64 @@
 
     <Grid x:Name="root" Background="{StaticResource bg}" RequestedTheme="Dark">
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="260"/>
+            <ColumnDefinition x:Name="col0" Width="260"/>
             <ColumnDefinition Width="*"/>
         </Grid.ColumnDefinitions>
 
-        <!-- ================= Sidebar (full height, rounded panel) ================= -->
+        <!-- ================= Content column ================= -->
+        <Grid Grid.Column="1">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="32"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+
+            <!-- Thin strip: window drag area. The system draws min / max /
+                 close at its right end. -->
+            <Grid x:Name="drag" Grid.Row="0" Background="Transparent"/>
+
+            <!-- Web frame: rounded corners test. -->
+            <Border
+                x:Name="frame"
+                Grid.Row="1"
+                Margin="0,0,6,6"
+                CornerRadius="{StaticResource r_web}"
+                Background="#FF0F0F0F">
+                <!-- Every tab's web view lives here; only the selected one is visible. -->
+                <Grid x:Name="host"/>
+            </Border>
+        </Grid>
+
+        <!-- ================= Left-edge hot zone =================
+             Only present while the sidebar is hidden. The pointer touching it
+             makes the sidebar float over the page. -->
+        <Grid
+            x:Name="hot"
+            Grid.ColumnSpan="2"
+            Width="8"
+            HorizontalAlignment="Left"
+            Background="Transparent"
+            Visibility="Collapsed"
+            PointerEntered="hot_In"
+            PointerExited="hot_Out"/>
+
+        <!-- ================= Sidebar (full height, rounded panel) =================
+             One element, three states (see win.side.cs): docked beside the
+             page, hidden, or floating over the page while the pointer is at
+             the left edge. It lives in a layer spanning both columns so it
+             can overlap the page; column 0 only reserves its space while docked. -->
         <Border
-            Grid.Column="0"
+            x:Name="side"
+            Grid.ColumnSpan="2"
+            Width="248"
+            HorizontalAlignment="Left"
             Margin="{StaticResource pad}"
             Padding="10"
             CornerRadius="{StaticResource r_side}"
-            Background="#26FFFFFF">
+            BorderBrush="#33FFFFFF"
+            BorderThickness="1"
+            Background="#26FFFFFF"
+            PointerEntered="side_In"
+            PointerExited="side_Out">
             <Grid RowSpacing="8">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
@@ -27,7 +74,7 @@
                 </Grid.RowDefinitions>
 
                 <!-- Back / forward / reload -->
-                <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="4">
+                <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="4" Margin="40,0,0,0">
                     <Button x:Name="back" Click="back_Click" Background="Transparent" BorderThickness="0">
                         <FontIcon Glyph="&#xE72B;" FontSize="14"/>
                     </Button>
@@ -70,13 +117,30 @@
                     Grid.Row="3"
                     SelectionMode="Single"
                     SelectionChanged="list_SelectionChanged">
+                    <!-- Soft pill for the selected tab and a light wash on hover,
+                         no accent bar. -->
+                    <ListView.Resources>
+                        <SolidColorBrush x:Key="ListViewItemBackgroundPointerOver" Color="#1AFFFFFF"/>
+                        <SolidColorBrush x:Key="ListViewItemBackgroundPressed" Color="#26FFFFFF"/>
+                        <SolidColorBrush x:Key="ListViewItemBackgroundSelected" Color="#33FFFFFF"/>
+                        <SolidColorBrush x:Key="ListViewItemBackgroundSelectedPointerOver" Color="#40FFFFFF"/>
+                        <SolidColorBrush x:Key="ListViewItemBackgroundSelectedPressed" Color="#33FFFFFF"/>
+                        <SolidColorBrush x:Key="ListViewItemSelectionIndicatorBrush" Color="Transparent"/>
+                        <SolidColorBrush x:Key="ListViewItemSelectionIndicatorPointerOverBrush" Color="Transparent"/>
+                        <SolidColorBrush x:Key="ListViewItemSelectionIndicatorPressedBrush" Color="Transparent"/>
+                    </ListView.Resources>
                     <ListView.ItemTemplate>
                         <DataTemplate x:DataType="n:Tab">
-                            <Grid Height="36" ColumnSpacing="10">
+                            <Grid
+                                Height="36"
+                                ColumnSpacing="10"
+                                Background="Transparent"
+                                PointerEntered="row_In"
+                                PointerExited="row_Out">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="18"/>
                                     <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="28"/>
                                 </Grid.ColumnDefinitions>
 
                                 <Image
@@ -95,11 +159,13 @@
                                     TextTrimming="CharacterEllipsis"
                                     Text="{x:Bind Title, Mode=OneWay}"/>
 
+                                <!-- Shown only while the pointer is over the row. -->
                                 <Button
                                     Grid.Column="2"
                                     Width="28"
                                     Height="28"
                                     Padding="0"
+                                    Visibility="Collapsed"
                                     Background="Transparent"
                                     BorderThickness="0"
                                     Click="shut_Click">
@@ -119,28 +185,22 @@
             </Grid>
         </Border>
 
-        <!-- ================= Content column ================= -->
-        <Grid Grid.Column="1">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="32"/>
-                <RowDefinition Height="*"/>
-            </Grid.RowDefinitions>
-
-            <!-- Thin strip: window drag area. The system draws min / max /
-                 close at its right end. -->
-            <Grid x:Name="drag" Grid.Row="0" Background="Transparent"/>
-
-            <!-- Web frame: rounded corners test. -->
-            <Border
-                x:Name="frame"
-                Grid.Row="1"
-                Margin="0,0,6,6"
-                CornerRadius="{StaticResource r_web}"
-                Background="#FF0F0F0F">
-                <!-- Every tab's web view lives here; only the selected one is visible. -->
-                <Grid x:Name="host"/>
-            </Border>
-        </Grid>
+        <!-- ================= Sidebar toggle =================
+             Sits above everything else at the top left. Docked it lines up
+             with the nav buttons; hidden it moves up into the title strip so
+             it does not cover the page. -->
+        <Button
+            x:Name="tog"
+            Grid.ColumnSpan="2"
+            HorizontalAlignment="Left"
+            VerticalAlignment="Top"
+            Margin="16,16,0,0"
+            Background="Transparent"
+            BorderThickness="0"
+            ToolTipService.ToolTip="Toggle sidebar (Ctrl+S)"
+            Click="tog_Click">
+            <FontIcon Glyph="&#xE700;" FontSize="14"/>
+        </Button>
 
         <!-- ================= Command bar overlay (hidden by default) ================= -->
         <Grid

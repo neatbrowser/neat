@@ -36,6 +36,7 @@ public sealed partial class Win : Window
         bar.ButtonInactiveBackgroundColor = Colors.Transparent;
 
         list.ItemsSource = _tabs;
+        SideInit();
 
         // The first tab opens once the window is up.
         root.Loaded += OnLoaded;

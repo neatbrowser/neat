@@ -2,9 +2,10 @@
 
 A browser built with WinUI 3 and WebView2, with a vertical tab sidebar.
 
-**Status:** phase W3, data layer. Settings, search engines, history and
-bookmarks are in place under the existing tab core. Nothing here has its own
-window yet; the Settings and Library windows come in later phases.
+**Status:** phase W4, sidebar. The sidebar can be docked or hidden (Ctrl+S or
+the button at the top left); while hidden it floats over the page when the
+pointer rests on the left edge. Tab rows are soft pills with a close button on
+hover.
 
 ## Requirements
 
@@ -38,7 +39,8 @@ Folder and file names are lowercase, in the style of large browser codebases.
 src/neat/
   neat.csproj      project (unpackaged, self-contained, x64)
   app.xaml(.cs)    application entry, look constants, shared services
-  win.xaml(.cs)    main window
+  win.xaml(.cs)    main window: tabs, navigation, bookmarks, command bar
+  win.side.cs      sidebar states (docked, hidden, peeking) and tab row look
   web/env.cs       app folders; points WebView2 at the bundled runtime
   web/tab.cs       one tab: its web view, title, address and favicon
   data/prefs.cs    what settings.json holds (home page, search engines, window size)
