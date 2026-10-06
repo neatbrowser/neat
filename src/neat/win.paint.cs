@@ -1,5 +1,6 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 
 namespace neat;
@@ -39,7 +40,12 @@ public sealed partial class Win
         }
 
         // While the menu is open the sidebar must not float away from under it.
-        fly.Opened += (s, e) => _fly = true;
+        fly.Opened += (s, e) =>
+        {
+            _fly = true;
+            Square();
+        };
+        square.SizeChanged += (s, e) => Square();
         fly.Closed += (s, e) =>
         {
             _fly = false;
@@ -72,21 +78,95 @@ public sealed partial class Win
 
         _sync = true;
         darksw.IsOn = t.Dark;
-        tone.Value = t.Tone;
         spread.Value = t.Spread;
         _sync = false;
+
+        Square();
+    }
+
+    /// <summary>
+    /// Repaints the colour square for the current light/dark setting and puts
+    /// the dot where the current hue and brightness are.
+    /// </summary>
+    private void Square()
+    {
+        var t = App.Look.Cur;
+
+        // Seven stops, one per sixth of the wheel (the last is the first again).
+        for (var i = 0; i < spec.GradientStops.Count; i++)
+            spec.GradientStops[i].Color = App.Look.Lightest(i * 60);
+
+        var black = (byte)Math.Round(255 * App.Look.Shade);
+        shade.GradientStops[1].Color = Windows.UI.Color.FromArgb(black, 0, 0, 0);
+
+        dot.Fill = new SolidColorBrush(App.Look.Stops()[0]);
+
+        // Before the menu has been shown the square has no size yet; it is placed
+        // again when it gets one.
+        var w = square.ActualWidth;
+        var h = square.ActualHeight;
+        if (w > 0 && h > 0)
+        {
+            Canvas.SetLeft(dot, t.Hue / 360 * w - dot.Width / 2);
+            Canvas.SetTop(dot, (1 - t.Tone) * h - dot.Height / 2);
+        }
+    }
+
+    // ---- dragging the dot ----
+
+    private bool _drag;
+
+    private void square_Down(object sender, PointerRoutedEventArgs e)
+    {
+        _drag = square.CapturePointer(e.Pointer);
+        Aim(e);
+    }
+
+    private void square_Move(object sender, PointerRoutedEventArgs e)
+    {
+        if (_drag)
+            Aim(e);
+    }
+
+    private void square_Up(object sender, PointerRoutedEventArgs e)
+    {
+        End(e);
+    }
+
+    private void square_Lost(object sender, PointerRoutedEventArgs e)
+    {
+        End(e);
+    }
+
+    /// <summary>Moves the dot to the pointer: across sets the hue, down sets the brightness.</summary>
+    private void Aim(PointerRoutedEventArgs e)
+    {
+        var p = e.GetCurrentPoint(square).Position;
+        var x = Math.Clamp(p.X / square.ActualWidth, 0, 1);
+        var y = Math.Clamp(p.Y / square.ActualHeight, 0, 1);
+
+        // Not saved on every movement; End() saves once when the drag is over.
+        App.Look.Set(t =>
+        {
+            t.Hue = x * 360;
+            t.Tone = 1 - y;
+        }, save: false);
+    }
+
+    private void End(PointerRoutedEventArgs e)
+    {
+        if (!_drag)
+            return;
+
+        _drag = false;
+        square.ReleasePointerCapture(e.Pointer);
+        App.Look.Commit();
     }
 
     private void darksw_Toggled(object sender, RoutedEventArgs e)
     {
         if (!_sync)
             App.Look.Set(t => t.Dark = darksw.IsOn);
-    }
-
-    private void tone_Changed(object sender, Microsoft.UI.Xaml.Controls.Primitives.RangeBaseValueChangedEventArgs e)
-    {
-        if (!_sync)
-            App.Look.Set(t => t.Tone = tone.Value);
     }
 
     private void spread_Changed(object sender, Microsoft.UI.Xaml.Controls.Primitives.RangeBaseValueChangedEventArgs e)

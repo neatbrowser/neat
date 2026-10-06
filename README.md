@@ -2,8 +2,10 @@
 
 A browser built with WinUI 3 and WebView2, with a vertical tab sidebar.
 
-**Status:** phase W5, keyboard shortcuts. The shortcuts below work both when
-focus is in the window's own controls and when it is inside a web page.
+**Status:** phase W6.2, window colour. The window gradient is generated from one
+hue. The palette button at the foot of the sidebar opens a menu with a colour
+square (across is the hue, down is the brightness; drag the dot), a Dark/Light
+switch, a gradient slider and ready-made hues. The choice is saved.
 
 ## Requirements
 

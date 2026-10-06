@@ -314,13 +314,42 @@
                                             OnContent="Dark"
                                             OffContent="Light"
                                             Toggled="darksw_Toggled"/>
-                                        <Slider
-                                            x:Name="tone"
-                                            Header="Brightness"
-                                            Minimum="0"
-                                            Maximum="1"
-                                            StepFrequency="0.01"
-                                            ValueChanged="tone_Changed"/>
+                                        <!-- Colour square: across is the hue, down is the brightness. Drag the dot. -->
+                                        <Grid x:Name="square" Height="140" Background="Transparent"
+                                              PointerPressed="square_Down"
+                                              PointerMoved="square_Move"
+                                              PointerReleased="square_Up"
+                                              PointerCaptureLost="square_Lost">
+                                            <Border CornerRadius="10">
+                                                <Border.Background>
+                                                    <LinearGradientBrush x:Name="spec" StartPoint="0,0" EndPoint="1,0">
+                                                        <GradientStop Offset="0" Color="Red"/>
+                                                        <GradientStop Offset="0.1667" Color="Yellow"/>
+                                                        <GradientStop Offset="0.3333" Color="Lime"/>
+                                                        <GradientStop Offset="0.5" Color="Cyan"/>
+                                                        <GradientStop Offset="0.6667" Color="Blue"/>
+                                                        <GradientStop Offset="0.8333" Color="Magenta"/>
+                                                        <GradientStop Offset="1" Color="Red"/>
+                                                    </LinearGradientBrush>
+                                                </Border.Background>
+                                            </Border>
+                                            <Border CornerRadius="10" IsHitTestVisible="False">
+                                                <Border.Background>
+                                                    <LinearGradientBrush x:Name="shade" StartPoint="0,0" EndPoint="0,1">
+                                                        <GradientStop Offset="0" Color="#00000000"/>
+                                                        <GradientStop Offset="1" Color="#99000000"/>
+                                                    </LinearGradientBrush>
+                                                </Border.Background>
+                                            </Border>
+                                            <Canvas IsHitTestVisible="False">
+                                                <Ellipse
+                                                    x:Name="dot"
+                                                    Width="18"
+                                                    Height="18"
+                                                    Stroke="White"
+                                                    StrokeThickness="2"/>
+                                            </Canvas>
+                                        </Grid>
                                         <Slider
                                             x:Name="spread"
                                             Header="Gradient"

@@ -20,8 +20,13 @@ public sealed class Look
 
     public Tint Cur => _cfg.Cur.Tint;
 
-    /// <summary>Changes the colour settings, saves them and tells the windows.</summary>
-    public void Set(Action<Tint> edit)
+    /// <summary>
+    /// Changes the colour settings and tells the windows. It also saves them,
+    /// unless <paramref name="save"/> is false: while a dot is being dragged the
+    /// colour changes dozens of times a second, so the save waits for
+    /// <see cref="Commit"/> when the drag ends.
+    /// </summary>
+    public void Set(Action<Tint> edit, bool save = true)
     {
         edit(Cur);
 
@@ -29,8 +34,16 @@ public sealed class Look
         Cur.Tone = Math.Clamp(Cur.Tone, 0, 1);
         Cur.Spread = Math.Clamp(Cur.Spread, 0, 1);
 
-        _cfg.Save();
+        if (save)
+            _cfg.Save();
+
         Changed?.Invoke();
+    }
+
+    /// <summary>Saves the current colours (after a series of Set calls that did not).</summary>
+    public void Commit()
+    {
+        _cfg.Save();
     }
 
     /// <summary>
@@ -43,8 +56,8 @@ public sealed class Look
         var t = Cur;
         var span = 240 * t.Spread;
 
-        var sat = t.Dark ? 0.65 : 0.35;
-        var val = t.Dark ? 0.16 + 0.34 * t.Tone : 0.78 + 0.19 * t.Tone;
+        var sat = Sat();
+        var val = Val(t.Tone);
         var mid = t.Dark ? 0.65 : 0.97;
 
         return new[]
@@ -54,6 +67,24 @@ public sealed class Look
             Hsv(t.Hue + span, sat, val * 0.95),
         };
     }
+
+    /// <summary>
+    /// The window's top colour for a hue at the lightest tone. The colour square
+    /// paints these across its width, then darkens it downwards by
+    /// <see cref="Shade"/>, so every spot on it is exactly the top colour that
+    /// spot would give.
+    /// </summary>
+    public Windows.UI.Color Lightest(double hue)
+    {
+        return Hsv(hue, Sat(), Val(1));
+    }
+
+    /// <summary>How much black covers the bottom (darkest) row of the colour square, 0 to 1.</summary>
+    public double Shade => 1 - Val(0) / Val(1);
+
+    private double Sat() => Cur.Dark ? 0.65 : 0.35;
+
+    private double Val(double tone) => Cur.Dark ? 0.16 + 0.34 * tone : 0.78 + 0.19 * tone;
 
     /// <summary>A mid-strength colour for a ready-made hue, for the swatches.</summary>
     public static Windows.UI.Color Swatch(double hue)
