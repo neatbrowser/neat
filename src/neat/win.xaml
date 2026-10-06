@@ -48,7 +48,7 @@
                         VerticalAlignment="Center"/>
                 </Border>
 
-                <!-- Sidebar toggle: a rounded panel with a bar down its left side. -->
+                <!-- Sidebar toggle: DockLeft (E90C) from Segoe Fluent Icons, a rounded panel with a bar down its left side. -->
                 <Button
                     x:Name="tog"
                     Click="tog_Click"
@@ -57,17 +57,7 @@
                     Background="Transparent"
                     BorderThickness="0"
                     ToolTipService.ToolTip="Toggle sidebar (Ctrl+S)">
-                    <Grid Width="16" Height="13">
-                        <Border
-                            BorderBrush="{ThemeResource TextFillColorPrimaryBrush}"
-                            BorderThickness="1.5"
-                            CornerRadius="3"/>
-                        <Rectangle
-                            Width="1.5"
-                            HorizontalAlignment="Left"
-                            Margin="5,0,0,0"
-                            Fill="{ThemeResource TextFillColorPrimaryBrush}"/>
-                    </Grid>
+                    <FontIcon Glyph="&#xE90C;" FontSize="14"/>
                 </Button>
 
                 <Button x:Name="back" Click="back_Click" Height="28" Padding="8,0" Background="Transparent" BorderThickness="0">
