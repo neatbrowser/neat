@@ -48,7 +48,7 @@
                         VerticalAlignment="Center"/>
                 </Border>
 
-                <!-- Sidebar toggle: DockLeft (E90C) from Segoe Fluent Icons, a rounded panel with a bar down its left side. -->
+                <!-- Sidebar toggle: a rounded panel with a bar down its left side. -->
                 <Button
                     x:Name="tog"
                     Click="tog_Click"
@@ -57,7 +57,17 @@
                     Background="Transparent"
                     BorderThickness="0"
                     ToolTipService.ToolTip="Toggle sidebar (Ctrl+S)">
-                    <FontIcon Glyph="&#xE90C;" FontSize="14"/>
+                    <Grid Width="16" Height="13">
+                        <Border
+                            BorderBrush="{ThemeResource TextFillColorPrimaryBrush}"
+                            BorderThickness="1.5"
+                            CornerRadius="3"/>
+                        <Rectangle
+                            Width="1.5"
+                            HorizontalAlignment="Left"
+                            Margin="5,0,0,0"
+                            Fill="{ThemeResource TextFillColorPrimaryBrush}"/>
+                    </Grid>
                 </Button>
 
                 <Button x:Name="back" Click="back_Click" Height="28" Padding="8,0" Background="Transparent" BorderThickness="0">
@@ -273,12 +283,86 @@
                     </ListView.ItemTemplate>
                 </ListView>
 
-                    <TextBlock
-                        x:Name="info"
-                        Grid.Row="2"
-                        FontSize="11"
-                        Opacity="0.6"
-                        TextWrapping="Wrap"/>
+                    <Grid Grid.Row="2" ColumnSpacing="6">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <TextBlock
+                            x:Name="info"
+                            VerticalAlignment="Bottom"
+                            FontSize="11"
+                            Opacity="0.6"
+                            TextWrapping="Wrap"/>
+
+                        <!-- Window colour: light or dark, brightness, gradient, and ready-made hues. -->
+                        <Button
+                            x:Name="paint"
+                            Grid.Column="1"
+                            VerticalAlignment="Bottom"
+                            Padding="8,6"
+                            Background="Transparent"
+                            BorderThickness="0"
+                            ToolTipService.ToolTip="Window colour">
+                            <FontIcon Glyph="&#xE790;" FontSize="14"/>
+                            <Button.Flyout>
+                                <Flyout x:Name="fly" Placement="TopEdgeAlignedLeft">
+                                    <StackPanel Width="270" Spacing="12">
+                                        <ToggleSwitch
+                                            x:Name="darksw"
+                                            OnContent="Dark"
+                                            OffContent="Light"
+                                            Toggled="darksw_Toggled"/>
+                                        <!-- Colour square: across is the hue, down is the brightness. Drag the dot. -->
+                                        <Grid x:Name="square" Height="140" Background="Transparent"
+                                              PointerPressed="square_Down"
+                                              PointerMoved="square_Move"
+                                              PointerReleased="square_Up"
+                                              PointerCaptureLost="square_Lost">
+                                            <Border CornerRadius="10">
+                                                <Border.Background>
+                                                    <LinearGradientBrush x:Name="spec" StartPoint="0,0" EndPoint="1,0">
+                                                        <GradientStop Offset="0" Color="Red"/>
+                                                        <GradientStop Offset="0.1667" Color="Yellow"/>
+                                                        <GradientStop Offset="0.3333" Color="Lime"/>
+                                                        <GradientStop Offset="0.5" Color="Cyan"/>
+                                                        <GradientStop Offset="0.6667" Color="Blue"/>
+                                                        <GradientStop Offset="0.8333" Color="Magenta"/>
+                                                        <GradientStop Offset="1" Color="Red"/>
+                                                    </LinearGradientBrush>
+                                                </Border.Background>
+                                            </Border>
+                                            <Border CornerRadius="10" IsHitTestVisible="False">
+                                                <Border.Background>
+                                                    <LinearGradientBrush x:Name="shade" StartPoint="0,0" EndPoint="0,1">
+                                                        <GradientStop Offset="0" Color="#00000000"/>
+                                                        <GradientStop Offset="1" Color="#99000000"/>
+                                                    </LinearGradientBrush>
+                                                </Border.Background>
+                                            </Border>
+                                            <Canvas IsHitTestVisible="False">
+                                                <Ellipse
+                                                    x:Name="dot"
+                                                    Width="18"
+                                                    Height="18"
+                                                    Stroke="White"
+                                                    StrokeThickness="2"/>
+                                            </Canvas>
+                                        </Grid>
+                                        <Slider
+                                            x:Name="spread"
+                                            Header="Gradient"
+                                            Minimum="0"
+                                            Maximum="1"
+                                            StepFrequency="0.01"
+                                            ValueChanged="spread_Changed"/>
+                                        <StackPanel x:Name="sw" Orientation="Horizontal" Spacing="6"/>
+                                    </StackPanel>
+                                </Flyout>
+                            </Button.Flyout>
+                        </Button>
+                    </Grid>
                 </Grid>
             </Border>
         </Grid>
