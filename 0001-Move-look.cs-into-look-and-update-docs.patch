@@ -1,0 +1,44 @@
+From db08dd9f200d0bae32a9d4551a105058c606de93 Mon Sep 17 00:00:00 2001
+From: claude <claude@users.noreply.anthropic.com>
+Date: Wed, 7 Oct 2026 04:56:45 +0000
+Subject: [PATCH] Move look.cs into look/ and update docs
+
+---
+ .claude/skills/xaml-codebehind-sync/SKILL.md | 2 +-
+ README.md                                    | 1 +
+ src/neat/{data => look}/look.cs              | 0
+ 3 files changed, 2 insertions(+), 1 deletion(-)
+ rename src/neat/{data => look}/look.cs (100%)
+
+diff --git a/.claude/skills/xaml-codebehind-sync/SKILL.md b/.claude/skills/xaml-codebehind-sync/SKILL.md
+index 45b4284..d5b97ea 100644
+--- a/.claude/skills/xaml-codebehind-sync/SKILL.md
++++ b/.claude/skills/xaml-codebehind-sync/SKILL.md
+@@ -18,7 +18,7 @@ All UI code lives in `src/neat/`. The main window is one partial class spread ov
+ - `win.xaml` is the markup. Every `x:Name` and every `Click="..."`-style handler here has a counterpart in C#.
+ - `win.xaml.cs`, `win.paint.cs`, `win.bar.cs`, `win.side.cs`, `win.keys.cs` are the code-behind for that window. `win.paint.cs`, for instance, owns the colour picker. Always search all of them, never only `win.xaml.cs`.
+ - `app.xaml` and `app.xaml.cs` are the application-level pair.
+-- `data/` and `web/` hold logic that is not tied to specific controls.
++- `data/`, `look/` and `web/` hold logic that is not tied to specific controls. The check script below only scans `*.cs` and `*.xaml` directly in `src/neat/`, so code in these folders must never use the window's `x:Name` controls.
+ 
+ ## Before editing XAML
+ 
+diff --git a/README.md b/README.md
+index 8b8ce7c..0cd70c8 100644
+--- a/README.md
++++ b/README.md
+@@ -45,6 +45,7 @@ src/neat/
+   win.keys.cs      shortcut table and the script that reports keys pressed inside pages
+   web/env.cs       app folders; points WebView2 at the bundled runtime
+   web/tab.cs       one tab: its web view, title, address and favicon
++  look/look.cs     window colour: turns the saved tint into the window gradient
+   data/prefs.cs    what settings.json holds (home page, search engines, window size)
+   data/store.cs    loads and saves settings.json
+   data/search.cs   turns typed text into an address or a search
+diff --git a/src/neat/data/look.cs b/src/neat/look/look.cs
+similarity index 100%
+rename from src/neat/data/look.cs
+rename to src/neat/look/look.cs
+-- 
+2.43.0
+
