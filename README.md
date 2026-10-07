@@ -45,6 +45,7 @@ src/neat/
   win.keys.cs      shortcut table and the script that reports keys pressed inside pages
   web/env.cs       app folders; points WebView2 at the bundled runtime
   web/tab.cs       one tab: its web view, title, address and favicon
+  look/look.cs     window colour: turns the saved tint into the window gradient
   data/prefs.cs    what settings.json holds (home page, search engines, window size)
   data/store.cs    loads and saves settings.json
   data/search.cs   turns typed text into an address or a search
