@@ -18,7 +18,7 @@ All UI code lives in `src/neat/`. The main window is one partial class spread ov
 - `win.xaml` is the markup. Every `x:Name` and every `Click="..."`-style handler here has a counterpart in C#.
 - `win.xaml.cs`, `win.paint.cs`, `win.bar.cs`, `win.side.cs`, `win.keys.cs` are the code-behind for that window. `win.paint.cs`, for instance, owns the colour picker. Always search all of them, never only `win.xaml.cs`.
 - `app.xaml` and `app.xaml.cs` are the application-level pair.
-- `data/` and `web/` hold logic that is not tied to specific controls.
+- `data/`, `look/` and `web/` hold logic that is not tied to specific controls. The check script below only scans `*.cs` and `*.xaml` directly in `src/neat/`, so code in these folders must never use the window's `x:Name` controls.
 
 ## Before editing XAML
 
