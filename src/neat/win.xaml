@@ -304,33 +304,13 @@
                                             OnContent="Dark"
                                             OffContent="Light"
                                             Toggled="darksw_Toggled"/>
-                                        <!-- Colour square: across is the hue, down is the brightness. Drag the dot. -->
-                                        <Grid x:Name="square" Height="140" Background="Transparent"
+                                        <!-- Colour pad: the angle round the centre is the colour, the distance from the centre is how light it is (dark in the middle, light at the rim). Drag the dot, or click to send it there. -->
+                                        <Grid x:Name="square" Width="200" Height="200" HorizontalAlignment="Center" Background="Transparent"
                                               PointerPressed="square_Down"
                                               PointerMoved="square_Move"
                                               PointerReleased="square_Up"
                                               PointerCaptureLost="square_Lost">
-                                            <Border CornerRadius="10">
-                                                <Border.Background>
-                                                    <LinearGradientBrush x:Name="spec" StartPoint="0,0" EndPoint="1,0">
-                                                        <GradientStop Offset="0" Color="Red"/>
-                                                        <GradientStop Offset="0.1667" Color="Yellow"/>
-                                                        <GradientStop Offset="0.3333" Color="Lime"/>
-                                                        <GradientStop Offset="0.5" Color="Cyan"/>
-                                                        <GradientStop Offset="0.6667" Color="Blue"/>
-                                                        <GradientStop Offset="0.8333" Color="Magenta"/>
-                                                        <GradientStop Offset="1" Color="Red"/>
-                                                    </LinearGradientBrush>
-                                                </Border.Background>
-                                            </Border>
-                                            <Border CornerRadius="10" IsHitTestVisible="False">
-                                                <Border.Background>
-                                                    <LinearGradientBrush x:Name="shade" StartPoint="0,0" EndPoint="0,1">
-                                                        <GradientStop Offset="0" Color="#00000000"/>
-                                                        <GradientStop Offset="1" Color="#99000000"/>
-                                                    </LinearGradientBrush>
-                                                </Border.Background>
-                                            </Border>
+                                            <Ellipse Fill="#18808080" Stroke="#40808080" StrokeThickness="1" IsHitTestVisible="False"/>
                                             <Canvas IsHitTestVisible="False">
                                                 <Ellipse
                                                     x:Name="dot"
@@ -347,6 +327,14 @@
                                             Maximum="1"
                                             StepFrequency="0.01"
                                             ValueChanged="spread_Changed"/>
+                                        <!-- Same limits as Look.MinOpacity and Look.MaxOpacity. -->
+                                        <Slider
+                                            x:Name="opacity"
+                                            Header="Opacity"
+                                            Minimum="0.25"
+                                            Maximum="0.8"
+                                            StepFrequency="0.01"
+                                            ValueChanged="opacity_Changed"/>
                                         <StackPanel x:Name="sw" Orientation="Horizontal" Spacing="6"/>
                                     </StackPanel>
                                 </Flyout>

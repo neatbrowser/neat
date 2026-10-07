@@ -29,19 +29,23 @@ public sealed class Geo
 }
 
 /// <summary>
-/// The window colour: one hue and how it is shaped. The gradient is made from
-/// these (see look.cs), so a single dot on a colour square can describe it.
+/// The window colour: the spot picked on the colour pad and how the colour is
+/// shaped. The gradient is made from these (see look.cs), so a single dot on
+/// the pad can describe it.
 /// </summary>
 public sealed class Tint
 {
-    /// <summary>Colour at the top of the window, 0 to 360 degrees round the colour wheel.</summary>
+    /// <summary>Angle of the picked spot round the pad, 0 to 360 degrees. It decides the colour.</summary>
     public double Hue { get; set; } = 75;
 
-    /// <summary>How light the colours are, 0 (deepest) to 1 (lightest).</summary>
+    /// <summary>Distance of the picked spot from the pad's centre, 0 (centre, darkest) to 1 (rim, lightest).</summary>
     public double Tone { get; set; } = 0.38;
 
     /// <summary>How far the hue travels from top to bottom, 0 (one flat colour) to 1.</summary>
     public double Spread { get; set; } = 0.8;
+
+    /// <summary>How strongly the picked colour shows over the window's base colour, 0.25 to 0.8.</summary>
+    public double Opacity { get; set; } = 0.5;
 
     /// <summary>Dark or light window.</summary>
     public bool Dark { get; set; } = true;

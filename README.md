@@ -43,9 +43,12 @@ src/neat/
   win.side.cs      sidebar states (docked, hidden, peeking) and tab row look
   win.bar.cs       title bar: click-through regions, address chip, copy link
   win.keys.cs      shortcut table and the script that reports keys pressed inside pages
+  win.paint.cs     colour menu: dark/light, gradient and opacity sliders, swatches
+  win.pad.cs       colour pad: the dot you drag or click to pick the colour
   web/env.cs       app folders; points WebView2 at the bundled runtime
   web/tab.cs       one tab: its web view, title, address and favicon
   look/look.cs     window colour: turns the saved tint into the window gradient
+  look/wheel.cs    colour pad maths: angle and distance from the centre to a colour (as in Zen)
   data/prefs.cs    what settings.json holds (home page, search engines, window size)
   data/store.cs    loads and saves settings.json
   data/search.cs   turns typed text into an address or a search
