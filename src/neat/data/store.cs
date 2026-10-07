@@ -82,6 +82,8 @@ public sealed class Store
         Cur.Tint.Tone = Math.Clamp(Cur.Tint.Tone, 0, 1);
         Cur.Tint.Spread = Math.Clamp(Cur.Tint.Spread, 0, 1);
         Cur.Tint.Opacity = Math.Clamp(Cur.Tint.Opacity, Look.MinOpacity, Look.MaxOpacity);
+        if (!Harmonies.Valid(Cur.Tint.Harmony))
+            Cur.Tint.Harmony = Harmony.Floating;
 
         Cur.Geo ??= new Geo();
         Cur.Geo.W = Math.Clamp(Cur.Geo.W, 640, 10000);

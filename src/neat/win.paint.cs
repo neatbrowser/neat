@@ -106,12 +106,12 @@ public sealed partial class Win
 
     private void sw_Click(object sender, RoutedEventArgs e)
     {
-        // A swatch sits on the ring where colours are purest, so it sends the dot there.
+        // A swatch sits on the ring where colours are purest, so it sends the first dot there.
         if (sender is Button { Tag: double h })
-            App.Look.Set(t =>
+            Animated(() => App.Look.Set(t =>
             {
                 t.Hue = h;
                 t.Tone = Look.SwatchTone;
-            });
+            }));
     }
 }

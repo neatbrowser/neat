@@ -304,14 +304,14 @@
                                             OnContent="Dark"
                                             OffContent="Light"
                                             Toggled="darksw_Toggled"/>
-                                        <!-- Colour pad: the angle round the centre is the colour, the distance from the centre is how light it is (dark in the middle, light at the rim). Drag the dot, or click to send it there. -->
+                                        <!-- Colour pad: the angle round the centre is the colour, the distance from the centre is how light it is (dark in the middle, light at the rim). Drag the big dot, or click to send it there; the small dots follow it. Right click a dot to remove it. -->
                                         <Grid x:Name="square" Width="200" Height="200" HorizontalAlignment="Center" Background="Transparent"
                                               PointerPressed="square_Down"
                                               PointerMoved="square_Move"
                                               PointerReleased="square_Up"
                                               PointerCaptureLost="square_Lost">
                                             <Ellipse Fill="#18808080" Stroke="#40808080" StrokeThickness="1" IsHitTestVisible="False"/>
-                                            <Canvas IsHitTestVisible="False">
+                                            <Canvas x:Name="dots" IsHitTestVisible="False">
                                                 <Ellipse
                                                     x:Name="dot"
                                                     Width="18"
@@ -320,6 +320,12 @@
                                                     StrokeThickness="2"/>
                                             </Canvas>
                                         </Grid>
+                                        <!-- Under the pad: remove a dot, change how the dots relate, add a dot. -->
+                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="8">
+                                            <Button x:Name="minus" Content="-" Width="40" Click="minus_Click" ToolTipService.ToolTip="Remove a colour"/>
+                                            <Button x:Name="harm" MinWidth="150" Click="harm_Click" ToolTipService.ToolTip="Change how the colours relate"/>
+                                            <Button x:Name="plus" Content="+" Width="40" Click="plus_Click" ToolTipService.ToolTip="Add a colour"/>
+                                        </StackPanel>
                                         <Slider
                                             x:Name="spread"
                                             Header="Gradient"

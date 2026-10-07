@@ -29,19 +29,23 @@ public sealed class Geo
 }
 
 /// <summary>
-/// The window colour: the spot picked on the colour pad and how the colour is
-/// shaped. The gradient is made from these (see look.cs), so a single dot on
-/// the pad can describe it.
+/// The window colour: the spots picked on the colour pad and how the colour is
+/// shaped. Hue and Tone place the first dot; the harmony says how many dots
+/// there are and works out where the others go. The gradient is made from
+/// these (see look.cs).
 /// </summary>
 public sealed class Tint
 {
-    /// <summary>Angle of the picked spot round the pad, 0 to 360 degrees. It decides the colour.</summary>
+    /// <summary>Angle of the first dot round the pad, 0 to 360 degrees. It decides the colour.</summary>
     public double Hue { get; set; } = 75;
 
-    /// <summary>Distance of the picked spot from the pad's centre, 0 (centre, darkest) to 1 (rim, lightest).</summary>
+    /// <summary>Distance of the first dot from the pad's centre, 0 (centre, darkest) to 1 (rim, lightest).</summary>
     public double Tone { get; set; } = 0.38;
 
-    /// <summary>How far the hue travels from top to bottom, 0 (one flat colour) to 1.</summary>
+    /// <summary>How the dots on the pad relate to each other; it also decides how many there are.</summary>
+    public Harmony Harmony { get; set; } = Harmony.Floating;
+
+    /// <summary>With one dot only: how far the hue travels from top to bottom, 0 (one flat colour) to 1.</summary>
     public double Spread { get; set; } = 0.8;
 
     /// <summary>How strongly the picked colour shows over the window's base colour, 0.25 to 0.8.</summary>
