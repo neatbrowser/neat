@@ -322,9 +322,13 @@
                                         </Grid>
                                         <!-- Under the pad: remove a dot, change how the dots relate, add a dot. -->
                                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="8">
-                                            <Button x:Name="minus" Content="-" Width="40" Click="minus_Click" ToolTipService.ToolTip="Remove a colour"/>
-                                            <Button x:Name="harm" MinWidth="150" Click="harm_Click" ToolTipService.ToolTip="Change how the colours relate"/>
-                                            <Button x:Name="plus" Content="+" Width="40" Click="plus_Click" ToolTipService.ToolTip="Add a colour"/>
+                                            <Button x:Name="minus" Click="minus_Click" Height="28" Padding="8,0" Background="Transparent" BorderThickness="0" ToolTipService.ToolTip="Remove a colour">
+                                                <FontIcon Glyph="&#xE738;" FontSize="14"/>
+                                            </Button>
+                                            <Button x:Name="harm" Click="harm_Click" MinWidth="150" Height="28" Padding="11,0" ToolTipService.ToolTip="Change how the colours relate"/>
+                                            <Button x:Name="plus" Click="plus_Click" Height="28" Padding="8,0" Background="Transparent" BorderThickness="0" ToolTipService.ToolTip="Add a colour">
+                                                <FontIcon Glyph="&#xE710;" FontSize="14"/>
+                                            </Button>
                                         </StackPanel>
                                         <Slider
                                             x:Name="spread"
