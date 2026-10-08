@@ -51,8 +51,8 @@
          Since 152.0.4191.53 the runtime no longer fits in one NuGet package,
          so it is split in two: both are required, and they must stay on the
          same version. -->
-    <PackageReference Include="WebView2.Runtime.X64" Version="154.0.4258.53" />
-    <PackageReference Include="WebView2.Runtime.X64.Core" Version="154.0.4258.53" />
+    <PackageReference Include="WebView2.Runtime.X64" Version="154.0.4258.62" />
+    <PackageReference Include="WebView2.Runtime.X64.Core" Version="154.0.4258.62" />
 
     <!-- SQLite for history and bookmarks (browser.db). Same version Mozart uses. -->
     <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.8" />
