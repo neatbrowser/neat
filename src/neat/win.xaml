@@ -16,7 +16,7 @@
 
         <!-- Grain: fine noise laid over the window colour, under everything else, so it
              shows wherever the colour shows (title bar, docked sidebar, the margin round the
-             page). Texture 0 hides it. The tiles are added in win.grain.cs. -->
+             page). Texture 0 hides it. The tiles are added in look/win.grain.cs. -->
         <Canvas x:Name="grain" Grid.RowSpan="2" IsHitTestVisible="False" Visibility="Collapsed"/>
 
         <!-- ================= Title bar (always visible) =================

@@ -37,28 +37,28 @@ Folder and file names are lowercase, in the style of large browser codebases.
 
 ```
 src/neat/
-  neat.csproj      project (unpackaged, self-contained, x64)
-  app.xaml(.cs)    application entry, look constants, shared services
-  win.xaml(.cs)    main window: tabs, navigation, bookmarks, command bar
-  win.side.cs      sidebar states (docked, hidden, peeking) and tab row look
-  win.bar.cs       title bar: click-through regions, address chip, copy link
-  win.keys.cs      shortcut table and the script that reports keys pressed inside pages
-  win.paint.cs     colour menu: dark/light, gradient and opacity sliders, swatches
-  win.pad.cs       colour pad: drag or click the big dot, add/remove dots, change harmony
-  win.grain.cs     texture: the layer of fine noise over the window colour, and its dial
-  web/env.cs       app folders; points WebView2 at the bundled runtime
-  web/tab.cs       one tab: its web view, title, address and favicon
-  look/look.cs     window colour: turns the saved tint into the window gradient
-  look/wheel.cs    colour pad maths: angle and distance from the centre to a colour (as in Zen)
-  look/harmony.cs  how up to three dots relate (complementary, triadic, ...), as in Zen
-  look/contrast.cs text contrast maths: keeps the window readable whatever colour is picked
-  look/grain.cs    texture maths: the sixteen dial steps and the noise tile
-  data/prefs.cs    what settings.json holds (home page, search engines, window size)
-  data/store.cs    loads and saves settings.json
-  data/search.cs   turns typed text into an address or a search
-  data/db.cs       connections to browser.db
-  data/history.cs  history table
-  data/marks.cs    bookmarks table (flat list, no folders yet)
+  neat.csproj       project (unpackaged, self-contained, x64)
+  app.xaml(.cs)     application entry, look constants, shared services
+  win.xaml(.cs)     main window: tabs, navigation, bookmarks, command bar
+  win.side.cs       sidebar states (docked, hidden, peeking) and tab row look
+  win.bar.cs        title bar: click-through regions, address chip, copy link
+  win.keys.cs       shortcut table and the script that reports keys pressed inside pages
+  web/env.cs        app folders; points WebView2 at the bundled runtime
+  web/tab.cs        one tab: its web view, title, address and favicon
+  look/look.cs      window colour: turns the saved tint into the window gradient
+  look/win.paint.cs colour menu: dark/light, gradient and opacity sliders, swatches
+  look/win.pad.cs   colour pad: drag or click the big dot, add/remove dots, change harmony
+  look/win.grain.cs texture: the layer of fine noise over the window colour, and its dial
+  look/wheel.cs     colour pad maths: angle and distance from the centre to a colour (as in Zen)
+  look/harmony.cs   how up to three dots relate (complementary, triadic, ...), as in Zen
+  look/contrast.cs  text contrast maths: keeps the window readable whatever colour is picked
+  look/grain.cs     texture maths: the sixteen dial steps and the noise tile
+  data/prefs.cs     what settings.json holds (home page, search engines, window size)
+  data/store.cs     loads and saves settings.json
+  data/search.cs    turns typed text into an address or a search
+  data/db.cs        connections to browser.db
+  data/history.cs   history table
+  data/marks.cs     bookmarks table (flat list, no folders yet)
 ```
 
 ## Where data is saved
