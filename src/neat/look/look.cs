@@ -22,6 +22,13 @@ public sealed class Look
     /// <summary>How far out on the pad a swatch sits: the ring where colours are purest.</summary>
     public const double SwatchTone = 0.5;
 
+    /// <summary>
+    /// The least contrast between the window's colours and its text (see
+    /// <see cref="Contrast"/>), 4.5 being the usual minimum for normal text. A
+    /// colour that would go below it is mixed in less, so the text stays readable.
+    /// </summary>
+    public const double MinContrast = 4.5;
+
     /// <summary>Raised after every change, so open windows can repaint.</summary>
     public event Action? Changed;
 
@@ -112,8 +119,8 @@ public sealed class Look
 
     /// <summary>
     /// Top, middle and bottom colours of the window. Every colour is mixed into
-    /// the window's base colour by the opacity, which keeps it soft and the text
-    /// readable.
+    /// the window's base colour by the opacity, which keeps it soft, and by no
+    /// more than still leaves the text readable (see <see cref="MinContrast"/>).
     ///
     /// One dot: its colour is at the top and the hue travels round the colour
     /// wheel by up to 240 degrees towards the bottom (the Gradient slider).
@@ -128,22 +135,24 @@ public sealed class Look
         if (spots.Length == 1)
         {
             var span = 240 * t.Spread;
+            var (angle, radius) = spots[0];
+
             return new[]
             {
-                Window(spots[0].Angle, spots[0].Radius),
-                Window(spots[0].Angle + span / 2, spots[0].Radius),
-                Window(spots[0].Angle + span, spots[0].Radius),
+                Window(Wheel.Rgb(angle, radius)),
+                Window(Wheel.Rgb(angle + span / 2, radius)),
+                Window(Wheel.Rgb(angle + span, radius)),
             }.Select(Make).ToArray();
         }
 
-        var a = Window(spots[0].Angle, spots[0].Radius);
-        var b = Window(spots[1].Angle, spots[1].Radius);
+        var a = Wheel.Rgb(spots[0].Angle, spots[0].Radius);
+        var b = Wheel.Rgb(spots[1].Angle, spots[1].Radius);
 
         if (spots.Length == 2)
-            return new[] { a, Wheel.Blend(a, b, 0.5), b }.Select(Make).ToArray();
+            return new[] { Window(a), Window(Wheel.Blend(a, b, 0.5)), Window(b) }.Select(Make).ToArray();
 
-        var c = Window(spots[2].Angle, spots[2].Radius);
-        return new[] { a, b, c }.Select(Make).ToArray();
+        var c = Wheel.Rgb(spots[2].Angle, spots[2].Radius);
+        return new[] { Window(a), Window(b), Window(c) }.Select(Make).ToArray();
     }
 
     /// <summary>The colour of every dot as the pad shows it (not yet mixed into the base), first dot first.</summary>
@@ -158,9 +167,17 @@ public sealed class Look
         return Make(Wheel.Rgb(hue, SwatchTone));
     }
 
-    private (byte R, byte G, byte B) Window(double angle, double radius)
+    /// <summary>
+    /// A colour from the pad as it shows in the window: mixed into the base
+    /// colour by the opacity, but not so far that the text (white on a dark
+    /// window, black on a light one) gets hard to read.
+    /// </summary>
+    private (byte R, byte G, byte B) Window((byte R, byte G, byte B) pad)
     {
-        return Wheel.Blend(Wheel.Rgb(angle, radius), Wheel.Base(Cur.Dark), Cur.Opacity);
+        var dark = Cur.Dark;
+        var ink = dark ? ((byte)255, (byte)255, (byte)255) : ((byte)0, (byte)0, (byte)0);
+
+        return Contrast.Legible(pad, Wheel.Base(dark), Cur.Opacity, ink, MinContrast);
     }
 
     private static Windows.UI.Color Make((byte R, byte G, byte B) c)

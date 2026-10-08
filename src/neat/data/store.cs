@@ -44,8 +44,25 @@ public sealed class Store
             System.Diagnostics.Debug.WriteLine("[store] load failed: " + ex.Message);
         }
 
+        // The file was there but could not be used. Keep a copy before the
+        // defaults replace it, so one typo in a hand edit does not cost every setting.
+        KeepDamaged();
+
         Cur = new Prefs();
         Save();
+    }
+
+    private void KeepDamaged()
+    {
+        try
+        {
+            if (File.Exists(_path))
+                File.Copy(_path, _path + ".bad", overwrite: true);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine("[store] could not keep the damaged file: " + ex.Message);
+        }
     }
 
     public void Save()

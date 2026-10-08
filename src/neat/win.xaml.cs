@@ -59,6 +59,9 @@ public sealed partial class Win : Window
     /// <summary>Remembers the window size (and whether it was maximized) for next time.</summary>
     private void OnClosed(object sender, WindowEventArgs e)
     {
+        // A closed window must stop repainting itself when the colour changes.
+        App.Look.Changed -= Paint;
+
         if (AppWindow.Presenter is not OverlappedPresenter p)
             return;
 
