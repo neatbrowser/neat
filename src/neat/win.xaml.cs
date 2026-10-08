@@ -43,6 +43,11 @@ public sealed partial class Win : Window
         if (App.Cfg.Cur.Geo.Max && AppWindow.Presenter is OverlappedPresenter p)
             p.Maximize();
 
+        // Watches for the UI thread getting stuck (see Heartbeat in web/log.cs).
+        // The queue is taken here, on the UI thread, and used from the timer's thread.
+        var ui = DispatcherQueue;
+        Heartbeat.Start(a => ui.TryEnqueue(() => a()));
+
         var tab = await Open(App.Cfg.Cur.Home);
 
         var core = tab.View.CoreWebView2;
@@ -51,6 +56,7 @@ public sealed partial class Win : Window
             var ver = core.Environment.BrowserVersionString;
             var src = Env.UsesFixed ? "bundled runtime" : "system runtime";
             _ver = $"WebView2 {ver} ({src})";
+            Log.Write("webview", _ver);
         }
 
         await Stats();
@@ -59,6 +65,10 @@ public sealed partial class Win : Window
     /// <summary>Remembers the window size (and whether it was maximized) for next time.</summary>
     private void OnClosed(object sender, WindowEventArgs e)
     {
+        // A normal exit leaves this line; a crash does not.
+        Log.Write("app", "window closed normally");
+        Heartbeat.Stop();
+
         // A closed window must stop repainting itself when the colour changes.
         App.Look.Changed -= Paint;
 
@@ -87,6 +97,8 @@ public sealed partial class Win : Window
         var tab = new Tab(new WebView2());
         host.Children.Add(tab.View);
         _tabs.Add(tab);
+        Log.Tabs = _tabs.Count;
+        Log.Write("tab", $"open, tabs now {_tabs.Count}");
         Pick(tab);
 
         try
@@ -97,10 +109,20 @@ public sealed partial class Win : Window
         {
             // No debugger in the loop yet, so show failures on screen.
             tab.Title = "WebView2 failed: " + ex.Message;
+            Log.Error("webview", ex, "EnsureCoreWebView2Async failed");
             return tab;
         }
 
         var core = tab.View.CoreWebView2;
+
+        // The tab can be closed while its web view is still starting up. Then
+        // there is no CoreWebView2 left to hook, and hooking it would throw.
+        if (core is null)
+        {
+            Log.Write("tab", "web view was closed before it finished starting");
+            return tab;
+        }
+
         Hook(tab, core);
 
         // Must be in place before the first page loads. Without it only the
@@ -125,6 +147,11 @@ public sealed partial class Win : Window
     /// <summary>Keeps a tab's sidebar row and the address box in step with its page.</summary>
     private void Hook(Tab tab, CoreWebView2 core)
     {
+        // A web view process (renderer, GPU or the whole browser) that dies
+        // is written to crash.log. Nothing else reacts to it yet.
+        core.ProcessFailed += (s, e) => Log.Write("webview",
+            $"process failed: {e.ProcessFailedKind}, reason {e.Reason}, exit code {e.ExitCode}, {e.ProcessDescription}; tabs {_tabs.Count}");
+
         core.WebMessageReceived += (s, e) => OnKey(tab, e.TryGetWebMessageAsString());
 
         core.DocumentTitleChanged += (s, e) =>
@@ -152,7 +179,7 @@ public sealed partial class Win : Window
             if (!e.IsSuccess || !web)
                 return;
 
-            await App.Hist.Add(url, core.DocumentTitle, tab.IconSrc);
+            await Log.Timed("history.add", () => App.Hist.Add(url, core.DocumentTitle, tab.IconSrc));
             await Stats();
         };
 
@@ -162,6 +189,7 @@ public sealed partial class Win : Window
         core.NewWindowRequested += (s, e) =>
         {
             e.Handled = true;
+            Log.Write("tab", $"page asked for a new window, tabs now {_tabs.Count}");
             _ = Open(e.Uri);
         };
 
@@ -201,6 +229,8 @@ public sealed partial class Win : Window
 
         host.Children.Remove(tab.View);
         _tabs.RemoveAt(i);
+        Log.Tabs = _tabs.Count;
+        Log.Write("tab", $"close, tabs now {_tabs.Count}");
         tab.View.Close();
 
         if (tab == _cur)
@@ -258,7 +288,7 @@ public sealed partial class Win : Window
 
         try
         {
-            on = !string.IsNullOrEmpty(url) && await App.Marks.Has(url);
+            on = !string.IsNullOrEmpty(url) && await Log.TimedValue("bookmarks.has", () => App.Marks.Has(url!));
         }
         catch (Exception)
         {
@@ -307,8 +337,8 @@ public sealed partial class Win : Window
     {
         try
         {
-            var h = await App.Hist.Count();
-            var m = await App.Marks.Count();
+            var h = await Log.TimedValue("history.count", () => App.Hist.Count());
+            var m = await Log.TimedValue("bookmarks.count", () => App.Marks.Count());
             info.Text = $"{_ver}\nhistory {h}  |  bookmarks {m}";
         }
         catch (Exception ex)

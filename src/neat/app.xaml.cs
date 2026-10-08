@@ -19,7 +19,19 @@ public partial class App : Application
         // runtime and the profile folder are picked up.
         Env.Configure();
 
+        // Anything that goes wrong without being caught is written to
+        // crash.log before the process dies. None of these handlers marks the
+        // error as handled, so the app behaves exactly as it did; they only
+        // leave a trace.
+        Log.Start();
+        AppDomain.CurrentDomain.UnhandledException += (s, e) =>
+            Log.Error("domain", e.ExceptionObject as Exception, $"unhandled exception, terminating={e.IsTerminating}");
+        TaskScheduler.UnobservedTaskException += (s, e) =>
+            Log.Error("task", e.Exception, "unobserved task exception");
+
         InitializeComponent();
+
+        UnhandledException += (s, e) => Log.Error("xaml", e.Exception, e.Message);
     }
 
     protected override async void OnLaunched(LaunchActivatedEventArgs args)
@@ -43,6 +55,7 @@ public partial class App : Application
             // A broken database must not stop the browser from opening. The
             // window reports the problem where the history numbers would be.
             System.Diagnostics.Debug.WriteLine("[app] database init failed: " + ex.Message);
+            Log.Error("db", ex, "database init failed");
         }
 
         _win = new Win();
