@@ -9,7 +9,7 @@ switch, a gradient slider and ready-made hues. The choice is saved.
 
 ## Requirements
 
-- Windows 10 1809 or newer, x64
+- Windows 10 21H2 or newer, x64
 - .NET 8 SDK
 
 The Windows App SDK runtime, the .NET runtime and the WebView2 runtime are all
