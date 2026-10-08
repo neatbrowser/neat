@@ -51,6 +51,9 @@ public sealed class Tint
     /// <summary>How strongly the picked colour shows over the window's base colour, 0.25 to 0.8.</summary>
     public double Opacity { get; set; } = 0.5;
 
+    /// <summary>How strong the grain (a layer of fine noise over the window colour) is: 0 for none, up to 15. See grain.cs.</summary>
+    public int Texture { get; set; } = 0;
+
     /// <summary>Dark or light window.</summary>
     public bool Dark { get; set; } = true;
 }

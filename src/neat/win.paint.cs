@@ -52,6 +52,7 @@ public sealed partial class Win
         };
 
         PadInit();
+        GrainInit();
 
         App.Look.Changed += Paint;
         Paint();
@@ -84,6 +85,7 @@ public sealed partial class Win
         _sync = false;
 
         Square();
+        GrainPaint();
     }
 
     private void darksw_Toggled(object sender, RoutedEventArgs e)

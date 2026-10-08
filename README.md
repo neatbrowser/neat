@@ -9,7 +9,7 @@ switch, a gradient slider and ready-made hues. The choice is saved.
 
 ## Requirements
 
-- Windows 10 21H2 or newer, x64
+- Windows 10 1809 or newer, x64
 - .NET 8 SDK
 
 The Windows App SDK runtime, the .NET runtime and the WebView2 runtime are all
@@ -45,12 +45,14 @@ src/neat/
   win.keys.cs      shortcut table and the script that reports keys pressed inside pages
   win.paint.cs     colour menu: dark/light, gradient and opacity sliders, swatches
   win.pad.cs       colour pad: drag or click the big dot, add/remove dots, change harmony
+  win.grain.cs     texture: the layer of fine noise over the window colour, and its dial
   web/env.cs       app folders; points WebView2 at the bundled runtime
   web/tab.cs       one tab: its web view, title, address and favicon
   look/look.cs     window colour: turns the saved tint into the window gradient
   look/wheel.cs    colour pad maths: angle and distance from the centre to a colour (as in Zen)
   look/harmony.cs  how up to three dots relate (complementary, triadic, ...), as in Zen
   look/contrast.cs text contrast maths: keeps the window readable whatever colour is picked
+  look/grain.cs    texture maths: the sixteen dial steps and the noise tile
   data/prefs.cs    what settings.json holds (home page, search engines, window size)
   data/store.cs    loads and saves settings.json
   data/search.cs   turns typed text into an address or a search

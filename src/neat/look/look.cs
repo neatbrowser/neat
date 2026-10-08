@@ -51,6 +51,7 @@ public sealed class Look
         Cur.Tone = Math.Clamp(Cur.Tone, 0, 1);
         Cur.Spread = Math.Clamp(Cur.Spread, 0, 1);
         Cur.Opacity = Math.Clamp(Cur.Opacity, MinOpacity, MaxOpacity);
+        Cur.Texture = Grain.Clamp(Cur.Texture);
         if (!Harmonies.Valid(Cur.Harmony))
             Cur.Harmony = Harmony.Floating;
 
