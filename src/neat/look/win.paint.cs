@@ -17,7 +17,12 @@ public sealed partial class Win
     private readonly SolidColorBrush _frameLight = new(Windows.UI.Color.FromArgb(255, 0xFA, 0xFA, 0xFA));
 
     private bool _fly;    // the colour menu is open
-    private bool _sync;   // the menu's controls are being filled in, so their events do nothing
+    // The menu's controls are being filled in, so their events do nothing. It starts
+    // true on purpose: while the window's XAML is built a slider can raise
+    // ValueChanged by itself (Opacity has a minimum above its default value of 0, so
+    // the slider moves its value up to the minimum), and that must not be saved as
+    // if the user had set it. Fill() turns it off once the controls hold the real values.
+    private bool _sync = true;
 
     private void PaintInit()
     {
@@ -42,6 +47,7 @@ public sealed partial class Win
         fly.Opened += (s, e) =>
         {
             _fly = true;
+            Fill();
             Square();
         };
         square.SizeChanged += (s, e) => Square();
@@ -78,31 +84,45 @@ public sealed partial class Win
         if (!_dock)
             side.Background = PeekBrush();
 
-        _sync = true;
-        darksw.IsOn = t.Dark;
-        spread.Value = t.Spread;
-        opacity.Value = t.Opacity;
-        _sync = false;
+        Fill();
 
         Square();
         GrainPaint();
     }
 
+    /// <summary>Puts the saved values into the menu's controls without those controls reacting.</summary>
+    private void Fill()
+    {
+        var t = App.Look.Cur;
+
+        _sync = true;
+        darksw.IsOn = t.Dark;
+        spread.Value = t.Spread;
+        opacity.Value = t.Opacity;
+        _sync = false;
+    }
+
+    /// <summary>
+    /// Whether a change in one of the menu's controls was made by the user: only
+    /// while the menu is open, and not while the controls are being filled in.
+    /// </summary>
+    private bool Touched => _fly && !_sync;
+
     private void darksw_Toggled(object sender, RoutedEventArgs e)
     {
-        if (!_sync)
+        if (Touched)
             App.Look.Set(t => t.Dark = darksw.IsOn);
     }
 
     private void spread_Changed(object sender, Microsoft.UI.Xaml.Controls.Primitives.RangeBaseValueChangedEventArgs e)
     {
-        if (!_sync)
+        if (Touched && Math.Abs(spread.Value - App.Look.Cur.Spread) > 0.0005)
             App.Look.Set(t => t.Spread = spread.Value);
     }
 
     private void opacity_Changed(object sender, Microsoft.UI.Xaml.Controls.Primitives.RangeBaseValueChangedEventArgs e)
     {
-        if (!_sync)
+        if (Touched && Math.Abs(opacity.Value - App.Look.Cur.Opacity) > 0.0005)
             App.Look.Set(t => t.Opacity = opacity.Value);
     }
 

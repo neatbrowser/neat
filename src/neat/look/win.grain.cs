@@ -31,7 +31,9 @@ public sealed partial class Win
     private readonly SolidColorBrush _knobInk = new();
     private readonly RotateTransform _knobTurn = new() { CenterX = 3, CenterY = 6 };
 
-    private WriteableBitmap? _tile;
+    private byte[]? _tileBytes;        // the noise tile's pixels, made once
+    private WriteableBitmap? _tile;     // the tile as a bitmap, for the window's layer
+    private int _sideRows;              // how many tiles tall the floating sidebar's strip is (0: none yet)
     private bool _dialDrag;
 
     private void GrainInit()
@@ -54,7 +56,10 @@ public sealed partial class Win
         root.SizeChanged += (s, e) =>
         {
             if (App.Look.Cur.Texture > 0)
+            {
                 Tiles();
+                SideGrain();
+            }
         };
     }
 
@@ -68,6 +73,7 @@ public sealed partial class Win
         grain.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
         if (on)
             Tiles();
+        SideGrain();
 
         // Dial: the dots up to the current step light up, the bar sits on the current step.
         _tickInk.Color = t.Dark
@@ -91,19 +97,26 @@ public sealed partial class Win
     /// <summary>Makes the noise tile the first time it is needed.</summary>
     private WriteableBitmap Tile()
     {
-        if (_tile is null)
-        {
-            var pixels = Grain.Tile();
-            var bitmap = new WriteableBitmap(Grain.TileSize, Grain.TileSize);
-
-            using (var stream = bitmap.PixelBuffer.AsStream())
-                stream.Write(pixels, 0, pixels.Length);
-
-            bitmap.Invalidate();
-            _tile = bitmap;
-        }
-
+        _tile ??= Bitmap(Grain.TileSize, TileBytes());
         return _tile;
+    }
+
+    private byte[] TileBytes()
+    {
+        _tileBytes ??= Grain.Tile();
+        return _tileBytes;
+    }
+
+    /// <summary>A bitmap of the given height holding the given pixels (blue, green, red, alpha; colour already multiplied by alpha).</summary>
+    private static WriteableBitmap Bitmap(int height, byte[] pixels)
+    {
+        var bitmap = new WriteableBitmap(Grain.TileSize, height);
+
+        using (var stream = bitmap.PixelBuffer.AsStream())
+            stream.Write(pixels, 0, pixels.Length);
+
+        bitmap.Invalidate();
+        return bitmap;
     }
 
     /// <summary>
@@ -144,6 +157,53 @@ public sealed partial class Win
 
         while (grain.Children.Count > need)
             grain.Children.RemoveAt(grain.Children.Count - 1);
+    }
+
+    // ---- the floating sidebar ----
+
+    /// <summary>
+    /// The sidebar, when it floats over the page (hidden, or peeking), is a solid
+    /// panel, and it hides the window's grain behind it. So the panel carries a
+    /// layer of its own, under its content: a brush made of a strip of the noise
+    /// tile repeated downwards (a brush cannot repeat by itself), which a rounded
+    /// border then clips to the panel's corners. The layer is pulled out over the
+    /// panel's padding so that it covers the whole panel, and it is hidden while
+    /// the sidebar is docked, because then the window's own grain shows through.
+    /// Called whenever the texture, the window's size or the sidebar's state change.
+    /// </summary>
+    private void SideGrain()
+    {
+        var t = App.Look.Cur;
+        var show = t.Texture > 0 && !_dock;
+
+        sidegrain.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+        if (!show)
+            return;
+
+        sidegrain.Opacity = Grain.Opacity(t.Texture);
+
+        var pad = side.Padding;
+        sidegrain.Margin = new Thickness(-pad.Left, -pad.Top, -pad.Right, -pad.Bottom);
+
+        // The strip has to be as tall as the panel, which is at most as tall as the window.
+        // It only ever grows: a strip that is too tall is cut off by the panel.
+        var rows = Math.Max(1, (int)Math.Ceiling(root.ActualHeight / Grain.TileSize));
+        if (rows > _sideRows)
+        {
+            var tile = TileBytes();
+            var strip = new byte[tile.Length * rows];
+            for (var i = 0; i < rows; i++)
+                Buffer.BlockCopy(tile, 0, strip, i * tile.Length, tile.Length);
+
+            sidegrain.Background = new ImageBrush
+            {
+                ImageSource = Bitmap(Grain.TileSize * rows, strip),
+                Stretch = Stretch.None,
+                AlignmentX = AlignmentX.Left,
+                AlignmentY = AlignmentY.Top,
+            };
+            _sideRows = rows;
+        }
     }
 
     // ---- turning the dial ----

@@ -153,6 +153,9 @@ public sealed partial class Win
 
         // With no sidebar beside it the page gets a margin on the left too.
         frame.Margin = new Thickness(_dock ? 0 : 6, 0, 6, 6);
+
+        // A floating panel hides the window's grain, so it carries its own (see win.grain.cs).
+        SideGrain();
     }
 
     /// <summary>

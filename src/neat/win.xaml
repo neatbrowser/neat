@@ -198,6 +198,16 @@
                         <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
 
+                    <!-- Grain for the floating panel, under everything else in it. A solid panel hides the
+                         window's grain, so it carries its own; win.grain.cs (SideGrain) fills it in, pulls
+                         it out over the panel's padding and hides it while the sidebar is docked. -->
+                    <Border
+                        x:Name="sidegrain"
+                        Grid.RowSpan="3"
+                        CornerRadius="{StaticResource r_side}"
+                        IsHitTestVisible="False"
+                        Visibility="Collapsed"/>
+
                     <!-- Opens the command bar overlay; its result opens in a new tab. -->
                     <Button
                         x:Name="newtab"
