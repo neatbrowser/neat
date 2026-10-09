@@ -23,6 +23,10 @@ public sealed partial class Win
 {
     private readonly List<Cmd> _cmds = new();
 
+    // The comma key (VK_OEM_COMMA). VirtualKey has no name for it, and without a name
+    // JsKey could not tell a page script what to look for.
+    private const VirtualKey Comma = (VirtualKey)0xBC;
+
     // Messages from pages must carry this, so a page cannot trigger commands by itself.
     private readonly string _tok = Guid.NewGuid().ToString("N");
     private string? _js;
@@ -58,6 +62,7 @@ public sealed partial class Win
         // Page and window
         Accel(VirtualKey.D, C, () => _ = ToggleMark());
         Accel(VirtualKey.W, C | S, Close);
+        Accel(Comma, C, ShowOpts);
     }
 
     // ---- what the shortcuts do ----
@@ -127,6 +132,7 @@ public sealed partial class Win
         {
             VirtualKey.Left => "arrowleft",
             VirtualKey.Right => "arrowright",
+            Comma => ",",
             _ => k.ToString().ToLowerInvariant(),   // A..Z, Tab, Home, F5
         };
     }

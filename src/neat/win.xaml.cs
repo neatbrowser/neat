@@ -54,6 +54,7 @@ public sealed partial class Win : Window
         if (core is not null)
         {
             var ver = core.Environment.BrowserVersionString;
+            WebVer = ver;   // for the settings window's About page (win.opts.cs)
             var src = Env.UsesFixed ? "bundled runtime" : "system runtime";
             _ver = $"WebView2 {ver} ({src})";
             Log.Write("webview", _ver);

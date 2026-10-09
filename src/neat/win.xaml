@@ -292,6 +292,7 @@
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
 
                         <TextBlock
@@ -382,6 +383,19 @@
                                     </StackPanel>
                                 </Flyout>
                             </Button.Flyout>
+                        </Button>
+
+                        <!-- Settings window (win.opts.cs). Setting (E713) is in both Segoe Fluent Icons and Segoe MDL2 Assets. -->
+                        <Button
+                            x:Name="gear"
+                            Grid.Column="2"
+                            Click="gear_Click"
+                            VerticalAlignment="Bottom"
+                            Padding="8,6"
+                            Background="Transparent"
+                            BorderThickness="0"
+                            ToolTipService.ToolTip="Settings (Ctrl+,)">
+                            <FontIcon Glyph="&#xE713;" FontSize="14"/>
                         </Button>
                     </Grid>
                 </Grid>
