@@ -3,8 +3,14 @@ using Windows.System;
 
 namespace neat;
 
-/// <summary>One keyboard shortcut: the keys and what they do.</summary>
-internal sealed record Cmd(VirtualKey Key, VirtualKeyModifiers Mod, Action Run);
+/// <summary>The groups the Shortcuts page lists shortcuts under, in the order it shows them.</summary>
+internal enum Area { Tabs, Navigation, Page, Window }
+
+/// <summary>
+/// One keyboard shortcut: the keys, what they do, and how the Shortcuts page
+/// lists them. Shortcuts with the same Name (Ctrl+R and F5 both reload) share one row there.
+/// </summary>
+internal sealed record Cmd(VirtualKey Key, VirtualKeyModifiers Mod, Action Run, Area Area, string Name);
 
 /// <summary>
 /// Keyboard shortcuts. Every shortcut is registered once through Accel() (in
@@ -23,6 +29,9 @@ public sealed partial class Win
 {
     private readonly List<Cmd> _cmds = new();
 
+    /// <summary>Every registered shortcut, in the order they were registered. The Shortcuts page in settings lists these.</summary>
+    internal IReadOnlyList<Cmd> Cmds => _cmds;
+
     // The comma key (VK_OEM_COMMA). VirtualKey has no name for it, and without a name
     // JsKey could not tell a page script what to look for.
     private const VirtualKey Comma = (VirtualKey)0xBC;
@@ -38,31 +47,31 @@ public sealed partial class Win
         const VirtualKeyModifiers A = VirtualKeyModifiers.Menu;   // Alt
 
         // Tabs
-        Accel(VirtualKey.W, C, () => { if (_cur is not null) Shut(_cur); });
-        Accel(VirtualKey.Tab, C, () => Step(1));
-        Accel(VirtualKey.Tab, C | S, () => Step(-1));
+        Accel(VirtualKey.W, C, Area.Tabs, "Close tab", () => { if (_cur is not null) Shut(_cur); });
+        Accel(VirtualKey.Tab, C, Area.Tabs, "Next tab", () => Step(1));
+        Accel(VirtualKey.Tab, C | S, Area.Tabs, "Previous tab", () => Step(-1));
 
         // Ctrl+1..8 pick that tab, Ctrl+9 the last one.
         for (var n = 1; n <= 8; n++)
         {
             var i = n - 1;
-            Accel(VirtualKey.Number0 + n, C, () => Nth(i));
+            Accel(VirtualKey.Number0 + n, C, Area.Tabs, "Go to tab", () => Nth(i));
         }
-        Accel(VirtualKey.Number9, C, () => Nth(_tabs.Count - 1));
+        Accel(VirtualKey.Number9, C, Area.Tabs, "Go to last tab", () => Nth(_tabs.Count - 1));
 
         // Navigation
-        Accel(VirtualKey.Left, A, Back);
-        Accel(VirtualKey.Right, A, Fwd);
-        Accel(VirtualKey.Home, A, GoHome);
-        Accel(VirtualKey.R, C, () => _cur?.View.Reload());
-        Accel(VirtualKey.F5, VirtualKeyModifiers.None, () => _cur?.View.Reload());
-        Accel(VirtualKey.R, C | S, () => _ = HardReload());
-        Accel(VirtualKey.F5, C, () => _ = HardReload());
+        Accel(VirtualKey.Left, A, Area.Navigation, "Back", Back);
+        Accel(VirtualKey.Right, A, Area.Navigation, "Forward", Fwd);
+        Accel(VirtualKey.Home, A, Area.Navigation, "Go to home page", GoHome);
+        Accel(VirtualKey.R, C, Area.Navigation, "Reload", () => _cur?.View.Reload());
+        Accel(VirtualKey.F5, VirtualKeyModifiers.None, Area.Navigation, "Reload", () => _cur?.View.Reload());
+        Accel(VirtualKey.R, C | S, Area.Navigation, "Reload without the cache", () => _ = HardReload());
+        Accel(VirtualKey.F5, C, Area.Navigation, "Reload without the cache", () => _ = HardReload());
 
         // Page and window
-        Accel(VirtualKey.D, C, () => _ = ToggleMark());
-        Accel(VirtualKey.W, C | S, Close);
-        Accel(Comma, C, ShowOpts);
+        Accel(VirtualKey.D, C, Area.Page, "Bookmark this page", () => _ = ToggleMark());
+        Accel(VirtualKey.W, C | S, Area.Window, "Close window", Close);
+        Accel(Comma, C, Area.Window, "Settings", ShowOpts);
     }
 
     // ---- what the shortcuts do ----
@@ -120,6 +129,44 @@ public sealed partial class Win
         if (c.Mod.HasFlag(VirtualKeyModifiers.Shift)) s.Append("shift+");
         s.Append(JsKey(c.Key));
         return s.ToString();
+    }
+
+    /// <summary>
+    /// The combinations of shortcuts that do the same thing, as the Shortcuts page writes them:
+    /// "Ctrl+R, F5". A run of number keys on the same modifiers is written as a range,
+    /// "Ctrl+1\u20138", so the eight tab shortcuts take one line, not eight.
+    /// </summary>
+    internal static string Show(IReadOnlyList<Cmd> same)
+    {
+        var first = same[0];
+        var digits = same.All(c => c.Key >= VirtualKey.Number0 && c.Key <= VirtualKey.Number9 && c.Mod == first.Mod);
+
+        if (digits && same.Count > 1)
+        {
+            var lo = same.Min(c => c.Key);
+            var hi = same.Max(c => c.Key);
+            return Mods(first.Mod) + KeyName(lo) + "\u2013" + KeyName(hi);
+        }
+
+        return string.Join(", ", same.Select(c => Mods(c.Mod) + KeyName(c.Key)));
+    }
+
+    private static string Mods(VirtualKeyModifiers m)
+    {
+        var s = new StringBuilder();
+        if (m.HasFlag(VirtualKeyModifiers.Control)) s.Append("Ctrl+");
+        if (m.HasFlag(VirtualKeyModifiers.Menu)) s.Append("Alt+");
+        if (m.HasFlag(VirtualKeyModifiers.Shift)) s.Append("Shift+");
+        return s.ToString();
+    }
+
+    /// <summary>A key's name as it is written on the keyboard, e.g. "W", "Tab", "F5", ",".</summary>
+    private static string KeyName(VirtualKey k)
+    {
+        if (k >= VirtualKey.Number0 && k <= VirtualKey.Number9)
+            return ((int)k - (int)VirtualKey.Number0).ToString();
+
+        return k == Comma ? "," : k.ToString();
     }
 
     /// <summary>A key's name as KeyboardEvent.key reports it, lower-cased.</summary>

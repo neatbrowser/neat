@@ -33,14 +33,14 @@ public sealed partial class Win
         // has been told to pass them through (see Holes).
         bar.LayoutUpdated += (s, e) => Holes();
 
-        Accel(VirtualKey.C, VirtualKeyModifiers.Control | VirtualKeyModifiers.Shift, () => _ = CopyLink());
+        Accel(VirtualKey.C, VirtualKeyModifiers.Control | VirtualKeyModifiers.Shift, Area.Page, "Copy link", () => _ = CopyLink());
 
         // Same keys as Zen: Ctrl+T new tab; Ctrl+L, Alt+D, Ctrl+K and Ctrl+E edit the address.
-        Accel(VirtualKey.T, VirtualKeyModifiers.Control, () => ShowBar(false));
-        Accel(VirtualKey.L, VirtualKeyModifiers.Control, () => ShowBar(true));
-        Accel(VirtualKey.D, VirtualKeyModifiers.Menu, () => ShowBar(true));
-        Accel(VirtualKey.K, VirtualKeyModifiers.Control, () => ShowBar(true));
-        Accel(VirtualKey.E, VirtualKeyModifiers.Control, () => ShowBar(true));
+        Accel(VirtualKey.T, VirtualKeyModifiers.Control, Area.Tabs, "New tab", () => ShowBar(false));
+        Accel(VirtualKey.L, VirtualKeyModifiers.Control, Area.Navigation, "Search or enter address", () => ShowBar(true));
+        Accel(VirtualKey.D, VirtualKeyModifiers.Menu, Area.Navigation, "Search or enter address", () => ShowBar(true));
+        Accel(VirtualKey.K, VirtualKeyModifiers.Control, Area.Navigation, "Search or enter address", () => ShowBar(true));
+        Accel(VirtualKey.E, VirtualKeyModifiers.Control, Area.Navigation, "Search or enter address", () => ShowBar(true));
     }
 
     /// <summary>

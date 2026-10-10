@@ -83,14 +83,17 @@ public sealed partial class Win
 
         // These work while focus is in the sidebar or the title bar. Whether
         // they also fire with focus inside a web page is what W5 will find out.
-        Accel(VirtualKey.S, VirtualKeyModifiers.Control, () => SetDock(!_dock));
-        Accel(VirtualKey.S, VirtualKeyModifiers.Control | VirtualKeyModifiers.Menu, () => Peek(!_peek));
+        Accel(VirtualKey.S, VirtualKeyModifiers.Control, Area.Window, "Toggle sidebar", () => SetDock(!_dock));
+        Accel(VirtualKey.S, VirtualKeyModifiers.Control | VirtualKeyModifiers.Menu, Area.Window, "Show sidebar over the page", () => Peek(!_peek));
     }
 
-    /// <summary>Registers a shortcut for the window and adds it to the shared table (see win.keys.cs).</summary>
-    private void Accel(VirtualKey key, VirtualKeyModifiers mod, Action act)
+    /// <summary>
+    /// Registers a shortcut for the window and adds it to the shared table (see win.keys.cs).
+    /// The group and name are how the Shortcuts page in settings lists it.
+    /// </summary>
+    private void Accel(VirtualKey key, VirtualKeyModifiers mod, Area area, string name, Action act)
     {
-        _cmds.Add(new Cmd(key, mod, act));
+        _cmds.Add(new Cmd(key, mod, act, area, name));
 
         var k = new KeyboardAccelerator { Key = key, Modifiers = mod };
         k.Invoked += (s, e) =>

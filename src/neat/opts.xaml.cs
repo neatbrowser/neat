@@ -15,8 +15,9 @@ namespace neat;
 /// It has no title text, no minimize or maximize and cannot be resized: a thin
 /// empty strip along the top (drag it to move the window), the system close
 /// button, and under that a row of tabs, icon above label, like Arc's. The
-/// pages are built in code from the blocks in ui/block.cs; opts.gen.cs and
-/// opts.about.cs hold the pages themselves.
+/// pages are built in code from the blocks in ui/block.cs, one file each:
+/// opts.gen.cs (General), opts.look.cs (Appearance), opts.keys.cs (Shortcuts)
+/// and opts.about.cs (About).
 ///
 /// Its colours come from the same window colour as the browser window
 /// (App.Look), through a Skin of its own, and follow it live.
@@ -166,6 +167,10 @@ public sealed partial class Opts : Window
         _home = null;
         _box = null;
 
+        // The colour menu of the page being left stops following the colour.
+        _pk?.Detach();
+        _pk = null;
+
         _at = i;
         for (var n = 0; n < _btns.Count; n++)
             _btns[n].Background = n == i ? _skin.Pill : _none;
@@ -175,8 +180,10 @@ public sealed partial class Opts : Window
         scroll.Content = i switch
         {
             0 => BuildGen(),
+            1 => BuildLook(),
+            2 => BuildKeys(),
             3 => BuildAbout(),
-            _ => Block.Page(),   // Appearance and Shortcuts come in W7.2
+            _ => Block.Page(),
         };
         scroll.ChangeView(0, 0, null, true);
     }
@@ -224,5 +231,9 @@ public sealed partial class Opts : Window
         // Esc and the close button do not move focus first, so a half-typed
         // home page would be lost without this.
         Flush();
+
+        // A closing window does not reliably tell its content it is unloaded, so the
+        // colour menu is told to stop following the colour here.
+        _pk?.Detach();
     }
 }
