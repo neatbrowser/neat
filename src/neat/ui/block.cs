@@ -18,13 +18,18 @@ namespace neat;
 /// </summary>
 internal static class Block
 {
-    /// <summary>The column a page's content sits in. Narrow, so rows stay easy to read in a wide window.</summary>
+    /// <summary>
+    /// The column a page's content sits in: as wide as the window allows, up to 640, so
+    /// cards are the same width on every page and labels and controls stay apart. With
+    /// Stretch, a column held back by MaxWidth sits in the middle. (Centre would shrink it
+    /// to its widest row instead, and the cards would hug their content.)
+    /// </summary>
     public static StackPanel Page(params UIElement[] parts)
     {
         var page = new StackPanel
         {
             MaxWidth = 640,
-            HorizontalAlignment = HorizontalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
             Margin = new Thickness(24, 0, 24, 24),
         };
 

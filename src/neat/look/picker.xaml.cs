@@ -55,6 +55,18 @@ public sealed partial class Picker : UserControl
 
         square.SizeChanged += (s, e) => Square();
 
+        // The pad takes two thirds of the menu's width: 200 in the sidebar flyout (300 wide),
+        // more where the menu is given more room. Its dots follow through square.SizeChanged.
+        SizeChanged += (s, e) =>
+        {
+            var d = Math.Round(e.NewSize.Width * 2 / 3);
+            if (d >= 100 && d != square.Width)
+            {
+                square.Width = d;
+                square.Height = d;
+            }
+        };
+
         PadInit();
         DialInit();
 
