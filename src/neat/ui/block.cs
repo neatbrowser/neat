@@ -18,25 +18,40 @@ namespace neat;
 /// </summary>
 internal static class Block
 {
+    /// <summary>The widest a page gets, margins not counted.</summary>
+    public const double PageMax = 592;
+
+    // Space left and right of a page.
+    private const double Gutter = 24;
+
     /// <summary>
-    /// The column a page's content sits in: as wide as the window allows, up to 640, so
-    /// cards are the same width on every page and labels and controls stay apart. With
-    /// Stretch, a column held back by MaxWidth sits in the middle. (Centre would shrink it
-    /// to its widest row instead, and the cards would hug their content.)
+    /// The column a page's content sits in, centred. It has no width of its own until
+    /// <see cref="Fit"/> gives it one, because a centred column otherwise shrinks to its
+    /// widest row and the cards would hug their content.
     /// </summary>
     public static StackPanel Page(params UIElement[] parts)
     {
         var page = new StackPanel
         {
-            MaxWidth = 640,
-            HorizontalAlignment = HorizontalAlignment.Stretch,
-            Margin = new Thickness(24, 0, 24, 24),
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Margin = new Thickness(Gutter, 0, Gutter, 24),
         };
 
         foreach (var part in parts)
             page.Children.Add(part);
 
         return page;
+    }
+
+    /// <summary>
+    /// Gives a page its width for a window that leaves it this much room: <see cref="PageMax"/>,
+    /// or less when the room is smaller. The page is centred, so it stays in the middle at any
+    /// window size. (A stretched column held back by MaxWidth was tried and sat off-centre.)
+    /// Call it again whenever the room changes.
+    /// </summary>
+    public static void Fit(FrameworkElement page, double room)
+    {
+        page.Width = Math.Clamp(room - 2 * Gutter, 0, PageMax);
     }
 
     public static TextBlock Head(Skin s, string text)

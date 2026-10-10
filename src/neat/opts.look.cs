@@ -16,8 +16,9 @@ public sealed partial class Opts
         // It repaints this window too, through App.Look.Changed (see Paint in opts.xaml.cs).
         _pk = new Picker
         {
-            // Wider than in the sidebar: the pad and the sliders grow with it.
-            Width = 440,
+            // A little wider than in the sidebar (300): the pad, which is two thirds of the
+            // width, and the sliders grow with it.
+            Width = 320,
             HorizontalAlignment = HorizontalAlignment.Center,
             Margin = new Thickness(0, 16, 0, 16),
         };

@@ -14,9 +14,12 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <ApplicationManifest>app.manifest</ApplicationManifest>
 
-    <!-- Embedded into neat.exe: this is the icon Explorer, the taskbar and
-         any shortcut to neat.exe (desktop, Start menu) show. -->
-    <ApplicationIcon>..\..\browser\branding\official\default.ico</ApplicationIcon>
+    <!-- The icon file, named once here. It is embedded into neat.exe (ApplicationIcon):
+         this is the icon Explorer, the taskbar and any shortcut to neat.exe (desktop,
+         Start menu) show. The same file is also copied next to neat.exe, see the
+         ItemGroup at the end, for the settings window to load at run time. -->
+    <AppIco>..\..\browser\branding\official\default.ico</AppIco>
+    <ApplicationIcon>$(AppIco)</ApplicationIcon>
 
     <!-- x64 only for now: the bundled Fixed Version WebView2 runtime below
          is the x64 build. Always build with -p:Platform=x64. -->
@@ -56,6 +59,13 @@
 
     <!-- SQLite for history and bookmarks (browser.db). Same version Mozart uses. -->
     <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.8" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The icon file from AppIco above, copied next to neat.exe as neat.ico (build and
+         publish). The settings window gives itself this icon in opts.xaml.cs; the exe's
+         embedded icon cannot be handed to a window by path. -->
+    <None Include="$(AppIco)" Link="neat.ico" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

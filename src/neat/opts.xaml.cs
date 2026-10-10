@@ -12,7 +12,8 @@ namespace neat;
 /// The settings window. One at a time (Win keeps the reference, see win.opts.cs),
 /// opened with Ctrl+, or the gear in the sidebar footer.
 ///
-/// It has no title text, no minimize or maximize and cannot be resized: a thin
+/// Its title, "Settings", shows in the task bar and Alt+Tab; nothing is drawn in
+/// the window. It has no minimize or maximize and cannot be resized: a thin
 /// empty strip along the top (drag it to move the window), the system close
 /// button, and under that a row of tabs, icon above label, like Arc's. The
 /// pages are built in code from the blocks in ui/block.cs, one file each:
@@ -27,6 +28,9 @@ public sealed partial class Opts : Window
     // Window size in DIPs. AppWindow wants physical pixels, so this is scaled.
     private const int W = 760;
     private const int H = 640;
+
+    // The icon file copied next to neat.exe by neat.csproj (the same file as the exe's own icon).
+    private const string Ico = "neat.ico";
 
     // Tab name and its glyph. All four are in both Segoe Fluent Icons and Segoe MDL2 Assets
     // (Windows 10 only has the second): Setting, Color, KeyboardClassic and Info.
@@ -51,8 +55,13 @@ public sealed partial class Opts : Window
         InitializeComponent();
         _own = own;
 
-        // No title text anywhere: not in the window, the task bar or Alt+Tab.
-        Title = string.Empty;
+        // The name for the task bar and Alt+Tab. It is not drawn in the window: the strip stays empty.
+        Title = "Settings";
+
+        // The same icon as neat.exe. If the file is missing the window keeps the default icon.
+        var ico = Path.Combine(AppContext.BaseDirectory, Ico);
+        if (File.Exists(ico))
+            AppWindow.SetIcon(ico);
 
         // The content reaches the top edge; the empty strip is the drag area.
         ExtendsContentIntoTitleBar = true;
@@ -71,6 +80,9 @@ public sealed partial class Opts : Window
         // The skin's brush is changed in place by Paint, so it is set once.
         root.Background = _skin.Bg;
         BuildTabs();
+
+        // The page is centred and has a width of its own, so it follows the window when that changes.
+        scroll.SizeChanged += (s, e) => Fit();
 
         var esc = new KeyboardAccelerator { Key = Windows.System.VirtualKey.Escape };
         esc.Invoked += (s, e) =>
@@ -185,7 +197,16 @@ public sealed partial class Opts : Window
             3 => BuildAbout(),
             _ => Block.Page(),
         };
+        Fit();
         scroll.ChangeView(0, 0, null, true);
+    }
+
+    /// <summary>Gives the page on show its width for the room the window leaves it.</summary>
+    private void Fit()
+    {
+        // Before the first layout there is no width to go by; SizeChanged calls this again.
+        if (scroll.Content is FrameworkElement page && scroll.ActualWidth > 0)
+            Block.Fit(page, scroll.ActualWidth);
     }
 
     // ---- colour ----
