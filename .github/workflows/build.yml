@@ -36,6 +36,9 @@ jobs:
         working-directory: tests/capture.check
         run: npm test
 
+      - name: Run session recovery self-check
+        run: dotnet run --project tests/session.check/session.check.csproj --configuration Release
+
       - name: Restore
         run: dotnet restore src/neat/neat.csproj -p:Platform=x64
 
