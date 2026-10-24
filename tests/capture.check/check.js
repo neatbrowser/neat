@@ -271,6 +271,68 @@ check('values longer than the limit are not reported', () => {
   expect(q.got().length >= 1, 'a 512-character password was not reported');
 });
 
+check('two-step login: the user name page reports only the user name', () => {
+  const p = load(`<form onsubmit="return false"><input id="e" type="email" autocomplete="username" name="identifier" value="alice@gmail.com">
+    <button id="next" type="button">Next</button></form>`);
+  p.click('#next');
+  const m = p.got();
+  expect(m.length === 1 && m[0].t === 'user' && m[0].u === 'alice@gmail.com', 'got ' + JSON.stringify(m));
+  expect(p.live() === 0, 'nothing should be watched on a page with no password');
+  p.click('#next');
+  expect(p.got().length === 1, 'the same user name twice in a moment was reported twice');
+});
+
+check('a user name field is recognised by type, autocomplete or name, and a search box is not', () => {
+  const report = field => {
+    const p = load(`<form onsubmit="return false">${field}<button id="go">Go</button></form>`);
+    p.click('#go');
+    return p.got();
+  };
+  expect(report('<input type="email" value="a@b.c">').length === 1, 'type email');
+  expect(report('<input type="text" autocomplete="username" value="alice">').length === 1, 'autocomplete username');
+  expect(report('<input type="text" name="identifier" value="alice">').length === 1, 'name identifier');
+  expect(report('<input type="text" id="loginName" value="alice">').length === 1, 'id loginName');
+  expect(report('<input type="tel" name="phone" value="0123456789">').length === 1, 'a phone number');
+  expect(report('<input type="search" name="q" value="cats">').length === 0, 'a search box');
+  expect(report('<input type="text" name="q" value="cats">').length === 0, 'a plain text box');
+  expect(report('<input type="text" name="comment" value="nice page">').length === 0, 'a comment box');
+  expect(report('<input type="email" value="">').length === 0, 'an empty field');
+  expect(report('<input type="email" style="display:none" value="a@b.c">').length === 0, 'a hidden field on the first step');
+  expect(report('<input type="email" value="' + 'x'.repeat(513) + '">').length === 0, 'too long');
+});
+
+check('a page that has a password field is not a first step', () => {
+  const p = load(`<form onsubmit="return false"><input id="u" type="email" value="alice@example.com">
+    <input id="p" type="password"><button id="go">Go</button></form>`);
+  p.click('#go');
+  expect(p.got().length === 0, 'a combined form with an empty password was taken as a first step: ' + JSON.stringify(p.got()));
+});
+
+check('a password page takes the user name from a hidden field marked username', () => {
+  const p = load(`<form onsubmit="return false"><input type="email" name="identifier" autocomplete="username" style="display:none" value="alice@gmail.com">
+    <input id="p" type="password"><button id="go">Next</button></form>`);
+  p.set('#p', 'the-password'); p.click('#go');
+  const o = p.got().find(x => x.t === 'offer');
+  expect(o && o.u === 'alice@gmail.com' && o.p === 'the-password', 'got ' + JSON.stringify(p.got()));
+
+  const h = load(`<form onsubmit="return false"><input type="hidden" autocomplete="username" value="bob@gmail.com">
+    <input id="p" type="password"><button id="go">Next</button></form>`);
+  h.set('#p', 'pw'); h.click('#go');
+  expect(h.got().find(x => x.t === 'offer').u === 'bob@gmail.com', 'a type=hidden field marked username');
+});
+
+check('a hidden field is only a user name when it is marked, and a visible one wins', () => {
+  const unmarked = load(`<form onsubmit="return false"><input type="hidden" name="user_id" value="12345">
+    <input type="text" style="display:none" name="user" value="trap"><input id="p" type="password"><button id="go">Go</button></form>`);
+  unmarked.set('#p', 'pw'); unmarked.click('#go');
+  expect(unmarked.got().find(x => x.t === 'offer').u === '', 'an unmarked hidden field was used');
+
+  const both = load(`<form onsubmit="return false"><input type="email" autocomplete="username" style="display:none" value="hidden@x.com">
+    <input type="text" value="visible-user"><input id="p" type="password"><button id="go">Go</button></form>`);
+  both.set('#p', 'pw'); both.click('#go');
+  expect(both.got().find(x => x.t === 'offer').u === 'visible-user', 'the hidden field beat the visible one');
+});
+
 check('the field going away is reported, a field that stays is not', () => {
   const gone = load(LOGIN);
   gone.set('#u', 'alice'); gone.set('#p', 'secret'); gone.click('#go');

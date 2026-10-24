@@ -268,8 +268,9 @@ public sealed partial class Win : Window
         // Ctrl+Shift+T brings it back (win.sess.cs).
         Remember(tab, i);
 
-        // A login that was waiting to find out how it went is not offered for a closed tab.
-        _capture.Drop(tab);
+        // A login that was waiting to find out how it went, and a user name kept for it, are not
+        // used for a closed tab.
+        _capture.Forget(tab);
 
         host.Children.Remove(tab.View);
         _tabs.RemoveAt(i);

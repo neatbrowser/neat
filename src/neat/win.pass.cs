@@ -142,6 +142,14 @@ public sealed partial class Win
 
                 break;
 
+            case "user":
+                // The first step of a two-step login: kept until the password step arrives.
+                var first = JsonText(root, "u");
+                if (first is not null)
+                    _capture.HoldUser(tab, origin, first);
+
+                break;
+
             case "gone":
                 // The password field went away without a new page: a login on a page that works by script.
                 if (_capture.Holds(tab))

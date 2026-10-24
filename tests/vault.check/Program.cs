@@ -56,6 +56,7 @@ internal static class Program
         Run("lookup never opens another site's entries", LookupOrigins);
         Run("a held login waits, expires and is taken once", CaptureHold);
         Run("a login that is not worth holding is refused", CaptureRefuse);
+        Run("the user name of a first step is filled into the password step", CaptureTwoStep);
         Run("offers for one site are spaced out", CaptureCooldown);
         Run("the never-save list keeps only clean origins", NeverList);
         Run("the vault code never logs", NoLogging);
@@ -1063,6 +1064,69 @@ internal static class Program
 
         Expect(capture.Hold(tab, "https://example.com", "", "p"), "an empty user name is fine");
         Expect(capture.Hold(tab, "https://example.com", new string('x', Capture.MaxLength), new string('y', Capture.MaxLength)), "exactly the longest is fine");
+    }
+
+    private static void CaptureTwoStep()
+    {
+        var now = new DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+        var capture = new Capture { Clock = () => now };
+        var tab = new object();
+        var other = new object();
+
+        // Google: the user name on one page, the password on the next, both on one site.
+        Expect(capture.HoldUser(tab, "https://accounts.google.com/v3/signin/identifier", "alice@gmail.com"), "the first step is kept");
+        Expect(capture.Hold(tab, "https://accounts.google.com/v3/signin/challenge/pwd", "", "the-password"), "the password step");
+        Expect(capture.Take(tab)!.User == "alice@gmail.com", "the user name of the first step is filled in");
+
+        // It is spent once the login has been offered: the next one starts clean.
+        capture.Hold(tab, "https://accounts.google.com", "", "again");
+        Expect(capture.Take(tab)!.User == "", "a spent user name is not used again");
+
+        // A user name that came with the login is not replaced.
+        capture.HoldUser(tab, "https://example.com", "from-step-one");
+        capture.Hold(tab, "https://example.com", "typed-here", "p");
+        Expect(capture.Take(tab)!.User == "typed-here", "the user name on the page wins");
+
+        // Not for another site, another tab, or after too long.
+        capture.HoldUser(tab, "https://example.com", "alice");
+        capture.Hold(tab, "https://other.example", "", "p");
+        Expect(capture.Take(tab)!.User == "", "another site does not get it");
+
+        capture.HoldUser(tab, "https://example.com", "alice");
+        capture.Hold(other, "https://example.com", "", "p");
+        Expect(capture.Take(other)!.User == "", "another tab does not get it");
+
+        capture.HoldUser(tab, "https://example.com", "alice");
+        now = now.AddMinutes(2.5);
+        capture.Hold(tab, "https://example.com", "", "p");
+        Expect(capture.Take(tab)!.User == "alice", "still good after 2.5 minutes");
+
+        capture.HoldUser(tab, "https://example.com", "alice");
+        now = now.AddMinutes(3.5);
+        capture.Hold(tab, "https://example.com", "", "p");
+        Expect(capture.Take(tab)!.User == "", "gone after 3.5 minutes");
+
+        // A failed login is dropped but the user name stays for the next try; a closed tab forgets both.
+        capture.HoldUser(tab, "https://example.com", "alice");
+        capture.Hold(tab, "https://example.com", "", "wrong");
+        capture.Drop(tab);
+        capture.Hold(tab, "https://example.com", "", "right");
+        Expect(capture.Take(tab)!.User == "alice", "the retry still has the user name");
+
+        capture.HoldUser(tab, "https://example.com", "alice");
+        capture.Forget(tab);
+        capture.Hold(tab, "https://example.com", "", "p");
+        Expect(capture.Take(tab)!.User == "", "a forgotten tab keeps nothing");
+
+        // What is not worth keeping.
+        Expect(!capture.HoldUser(tab, "https://example.com", ""), "an empty user name");
+        Expect(!capture.HoldUser(tab, "javascript:1", "alice"), "not a web address");
+        Expect(!capture.HoldUser(tab, "https://example.com", new string('x', Capture.MaxLength + 1)), "too long");
+
+        capture.HoldUser(tab, "https://example.com", "alice");
+        capture.Clear();
+        capture.Hold(tab, "https://example.com", "", "p");
+        Expect(capture.Take(tab)!.User == "", "clear forgets the user names too");
     }
 
     private static void CaptureCooldown()

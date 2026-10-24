@@ -17,8 +17,13 @@ public sealed record Pending(string Site, string User, string Password, DateTime
 /// moved on (the next page has no password field, or the field went away). A failed login
 /// shows the form again and the held login is dropped.
 ///
-/// A held password lives in memory only, for that short time, and is dropped as soon as it is
-/// taken. Nothing here is written anywhere.
+/// Many sites (Google, Microsoft) ask for the user name on one page and the password on the next,
+/// and the password page has no user name field to read. So the page script also reports the user
+/// name from the first step (see <see cref="HoldUser"/>), and it is filled in when a login arrives
+/// from the same site without one.
+///
+/// A held password or user name lives in memory only, for that short time, and is dropped as soon
+/// as it is taken. Nothing here is written anywhere.
 /// </summary>
 public sealed class Capture
 {
@@ -28,10 +33,14 @@ public sealed class Capture
     /// <summary>After offering to save for a site, it is not offered again for this long.</summary>
     public static readonly TimeSpan Cooldown = TimeSpan.FromSeconds(20);
 
+    /// <summary>How long the user name of a first step is remembered, waiting for the password step.</summary>
+    public static readonly TimeSpan UserWindow = TimeSpan.FromMinutes(3);
+
     /// <summary>The longest user name or password accepted: anything longer is not a login.</summary>
     public const int MaxLength = 512;
 
     private readonly Dictionary<object, Pending> _held = new();
+    private readonly Dictionary<object, (string Site, string User, DateTime At)> _users = new();
     private readonly Dictionary<string, DateTime> _offered = new(StringComparer.Ordinal);
 
     // The clock this (and the self-check) uses.
@@ -48,7 +57,30 @@ public sealed class Capture
         if (origin is null || password.Length == 0 || password.Length > MaxLength || user.Length > MaxLength)
             return false;
 
+        // A password page with no user name of its own: use the one from the step before, if it was
+        // on the same site and not long ago. A user name that came with the login is never replaced.
+        if (user.Length == 0 && _users.TryGetValue(tab, out var known)
+            && known.Site == origin && Clock() - known.At < UserWindow)
+        {
+            user = known.User;
+        }
+
         _held[tab] = new Pending(origin, user, password, Clock());
+        return true;
+    }
+
+    /// <summary>
+    /// Remembers the user name typed on the first step of a two-step login, for the password step.
+    /// False (nothing kept) for a user name that is empty, too long, or on a page that is not a web origin.
+    /// </summary>
+    public bool HoldUser(object tab, string site, string user)
+    {
+        var origin = Origin.Of(site);
+
+        if (origin is null || user.Length == 0 || user.Length > MaxLength)
+            return false;
+
+        _users[tab] = (origin, user, Clock());
         return true;
     }
 
@@ -66,19 +98,33 @@ public sealed class Capture
         if (!_held.Remove(tab, out var p))
             return null;
 
+        // The login has got as far as being offered: the user name of the step before is spent.
+        _users.Remove(tab);
+
         return Fresh(p) ? p : null;
     }
 
-    /// <summary>Forgets what is held for a tab (the login failed, or the tab closed).</summary>
+    /// <summary>
+    /// Forgets the login held for a tab because it failed. The user name of the first step is kept,
+    /// because the person is about to try the password again.
+    /// </summary>
     public void Drop(object tab)
     {
         _held.Remove(tab);
+    }
+
+    /// <summary>Forgets everything held for a tab that has been closed.</summary>
+    public void Forget(object tab)
+    {
+        _held.Remove(tab);
+        _users.Remove(tab);
     }
 
     /// <summary>Forgets everything held.</summary>
     public void Clear()
     {
         _held.Clear();
+        _users.Clear();
     }
 
     /// <summary>

@@ -14,6 +14,10 @@ namespace neat;
 ///     it only gets NEAT to ask the person whether to save what the page itself already has.
 ///   - It reports a login, it does not decide. Whether it worked is found out afterwards,
 ///     by the window (see vault/capture.cs).
+///   - Two-step logins (user name on one page, password on the next) are reported in two parts: the
+///     first step sends only the user name, and the window puts the two together. A password page
+///     may also carry the user name in a hidden field marked autocomplete="username" (that is what
+///     password managers look for), which is used when no visible field has it.
 ///   - It runs in the page's own world, so the page can see that it exists. What it sends
 ///     starts with the session token (the same kind as the shortcut script's), but the token
 ///     is not a secret from the page: what really checks a message is the window, which
@@ -62,6 +66,32 @@ internal static class CaptureScript
             return (marked.length ? marked[marked.length - 1] : before[before.length - 1]).value.trim();
           };
 
+          // A user name left in a field the page hides, marked as the user name the way password
+          // managers expect: a password page often keeps the user name of the step before there.
+          const hiddenUser = root => {
+            const found = Array.from(root.querySelectorAll('input')).filter(i =>
+              !visible(i) && i.type !== 'password' && i.value.trim().length > 0 && i.value.length <= MAX &&
+              /(^|\s)username(\s|$)/i.test(i.getAttribute('autocomplete') || ''));
+            return found.length ? found[found.length - 1].value.trim() : '';
+          };
+
+          // The first step of a two-step login: a page with no password field and a filled field that
+          // looks like a user name. A search box or a plain text box does not look like one.
+          const IDENT = /user|e-?mail|login|ident|account|phone|tel/i;
+          let lastStep = null;
+          const step = root => {
+            const found = Array.from(root.querySelectorAll('input')).filter(i =>
+              TEXTY.has(i.type) && visible(i) && i.value.trim().length > 0 && i.value.length <= MAX &&
+              (i.type === 'email' || /(^|\s)(username|email)(\s|$)/i.test(i.getAttribute('autocomplete') || '') ||
+               IDENT.test((i.name || '') + ' ' + (i.id || ''))));
+            if (!found.length) return;
+            const u = found[found.length - 1].value.trim();
+            const now = Date.now();
+            if (lastStep && lastStep.u === u && now - lastStep.at < 1500) return;
+            lastStep = { u: u, at: now };
+            post({ t: 'user', u: u });
+          };
+
           const watch = (el, id) => {
             let n = 0;
             const t = setInterval(() => {
@@ -75,12 +105,14 @@ internal static class CaptureScript
           let last = null;
           const offer = container => {
             const root = container && container.querySelectorAll ? container : document;
-            const pws = Array.from(root.querySelectorAll('input[type="password"]')).filter(i => visible(i) && i.value.length > 0);
+            const shown = Array.from(root.querySelectorAll('input[type="password"]')).filter(i => visible(i));
+            if (shown.length === 0) { step(root); return; }
+            const pws = shown.filter(i => i.value.length > 0);
             let pick = null;
             if (pws.length === 1) pick = pws[0];
             else if (pws.length === 2 && pws[0].value === pws[1].value) pick = pws[0];
             if (!pick || pick.value.length > MAX) return;
-            const u = userFor(pick, root);
+            const u = userFor(pick, root) || hiddenUser(root);
             // One login often makes two reports at once (Enter, then the click the browser
             // makes on the button): the second is the same login and is left out.
             const now = Date.now();
