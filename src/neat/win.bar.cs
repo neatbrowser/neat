@@ -68,7 +68,7 @@ public sealed partial class Win
         var k = root.XamlRoot.RasterizationScale;
         var all = new List<RectInt32>();
 
-        foreach (var b in new FrameworkElement[] { tog, back, fwd, reload, copy, domb, star })
+        foreach (var b in new FrameworkElement[] { tog, back, fwd, reload, copy, domb, keybtn, star })
         {
             if (b.ActualWidth <= 0 || b.ActualHeight <= 0)
                 continue;
@@ -97,6 +97,9 @@ public sealed partial class Win
     /// <summary>Shows the selected tab's site in the address chip.</summary>
     private void ShowDom(Tab tab)
     {
+        // Whether this page has saved logins decides if the key button shows (win.fill.cs).
+        _ = Guard(UpdateKey, "updating the key button");
+
         dom.Text = Dom(tab.Src);
         ToolTipService.SetToolTip(domb, string.IsNullOrEmpty(tab.Src) ? "Search or enter address (Ctrl+L)" : tab.Src);
     }

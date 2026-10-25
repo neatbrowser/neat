@@ -59,6 +59,11 @@ internal static class Program
         Run("the user name of a first step is filled into the password step", CaptureTwoStep);
         Run("offers for one site are spaced out", CaptureCooldown);
         Run("the never-save list keeps only clean origins", NeverList);
+        Run("has tells whether a site has logins, even while the vault is shut", HasSite);
+        Run("fill gives a login only to the exact origin it was saved for", FillOrigin);
+        Run("fill never hands a login out for a damaged entry or a shut vault", FillSafety);
+        Run("addresses are shown in a form that is hard to fake, with a warning when needed", LookalikeAddresses);
+        Run("the fill script gets the login as data, not as text", FillScriptData);
         Run("the vault code never logs", NoLogging);
         Run("the real number of PBKDF2 rounds works", RealRounds);
 
@@ -1161,6 +1166,146 @@ internal static class Program
         var full = Enumerable.Range(0, Never.Max).Select(i => $"https://site{i}.example").ToList();
         Expect(!Never.Add(full, "https://one-more.example"), "a full list takes no more");
         Expect(Never.Clean(full.Concat(new[] { "https://extra.example" })).Count == Never.Max, "a long list is cut to the limit");
+    }
+
+    // ---- filling ----
+
+    private static void HasSite()
+    {
+        var (v, _) = PasswordVault();
+        Expect(!v.IsOpen, "(sanity) the vault is shut");
+        Expect(v.Has("https://example.com/login"), "a site with a login, while shut");
+        Expect(!v.Has("https://other.example"), "a site with none");
+        Expect(!v.Has("http://example.com"), "http is another origin");
+        Expect(!v.Has("https://example.com:8443"), "another port");
+        Expect(!v.Has("javascript:alert(1)") && !v.Has("") && !v.Has("not an address"), "things that are not a site");
+
+        Expect(!NewVault(TempFile()).Has("https://example.com"), "a vault that was never read has nothing");
+
+        var path = TempFile();
+        Expect(!NewVault(path).FileExists, "no file yet");
+        NewVault(path).Open();
+        Expect(NewVault(path).FileExists, "a file after the first Open");
+    }
+
+    private static void FillOrigin()
+    {
+        var v = NewVault(TempFile());
+        v.Open();
+        var id = v.Add("https://accounts.example.com", "alice@example.com", "the-password");
+
+        using (var ok = v.Fill(id, "https://accounts.example.com/signin?next=1"))
+        {
+            Expect(ok is not null, "the exact origin gets the login");
+            Expect(ok!.User == "alice@example.com" && ok.Password.Text() == "the-password", "with the right values");
+        }
+
+        foreach (var page in new[]
+        {
+            "http://accounts.example.com/",          // https login given to the http page
+            "https://accounts.example.com:8443/",    // another port
+            "https://example.com/",                  // the parent
+            "https://evil.accounts.example.com/",    // a child
+            "https://accounts.example.com.evil.example/",
+            "https://evil.example/https://accounts.example.com/",
+            "https://xn--ccounts-6ve.example.com/",  // a look-alike in punycode
+            "javascript:alert(1)",
+            "about:blank",
+            "",
+        })
+        {
+            Expect(v.Fill(id, page) is null, "a login was handed out for " + page);
+        }
+
+        // An http login goes to the http page only.
+        var plain = v.Add("http://old.example", "bob", "p");
+        Expect(v.Fill(plain, "http://old.example/") is not null, "http login, http page");
+        Expect(v.Fill(plain, "https://old.example/") is null, "http login, https page");
+
+        Expect(v.Fill(Guid.NewGuid(), "https://accounts.example.com/") is null, "an unknown entry");
+
+        // No sign-in is needed: this is for filling a page, not for showing the password.
+        var (pw, _) = PasswordVault();
+        pw.Unlock("the right password".AsSpan());
+        var entry = pw.List().Single();
+        Expect(pw.Fill(entry.Id, "https://example.com/") is not null, "fill works with no Access once the vault is open");
+    }
+
+    private static void FillSafety()
+    {
+        var path = TempFile();
+        var v = NewVault(path);
+        v.Open();
+        var id = v.Add("https://example.com", "u", "p");
+
+        // A shut vault gives nothing and does not guess.
+        var shut = NewVault(path, new TestWrap(RandomNumberGenerator.GetBytes(32)));
+        shut.Open();
+        ExpectThrows<InvalidOperationException>(() => shut.Fill(id, "https://example.com/"), "a shut vault must refuse");
+
+        // An entry that does not check out is not filled.
+        var json = Read(path);
+        json["Logins"]![0]!["Pass"] = json["Logins"]![0]!["User"]!.GetValue<string>();
+        Save(path, json);
+        var again = NewVault(path);
+        again.Open();
+        Expect(again.Fill(id, "https://example.com/") is null, "a damaged entry was filled");
+    }
+
+    private static void LookalikeAddresses()
+    {
+        Expect(Lookalike.Shown("https://example.com") == "example.com", "an ordinary address is just the host");
+        Expect(Lookalike.Warning("https://example.com") is null, "and has no warning");
+        Expect(Lookalike.Warning("https://login.example.co.uk:8443") is null, "nor with sub-domains and a port");
+        Expect(Lookalike.Warning("https://192.168.0.1") is null && Lookalike.Shown("https://192.168.0.1") == "192.168.0.1", "an IP address");
+        Expect(Lookalike.Warning("https://[::1]:3000") is null, "an IPv6 address");
+
+        // A real foreign-language address: readable form, then the ASCII form, and a mild note.
+        var bucher = "https://b\u00fccher.de";
+        var origin = Origin.Of(bucher)!;
+        Expect(Lookalike.Shown(origin) == "b\u00fccher.de (xn--bcher-kva.de)", "shown: " + Lookalike.Shown(origin));
+        var mild = Lookalike.Warning(origin);
+        Expect(mild is not null && mild.Contains("outside a-z") && !mild.Contains("mixes"), "a mild note: " + mild);
+
+        // Vietnamese letters are Latin letters: a note, not an alarm.
+        var viet = Origin.Of("https://vi\u1ec7t.vn")!;
+        Expect(Lookalike.Warning(viet) is { } v && v.Contains("outside a-z") && !v.Contains("mixes"), "Vietnamese is not mixed alphabets");
+
+        // "apple.com" with a Cyrillic a: Latin and Cyrillic in one word.
+        var fake = Origin.Of("https://\u0430pple.com")!;
+        Expect(fake.Contains("xn--"), "(sanity) the fake is kept in punycode: " + fake);
+        Expect(Lookalike.Shown(fake).Contains(fake.Replace("https://", "")), "the ASCII form is always shown: " + Lookalike.Shown(fake));
+        Expect(Lookalike.Warning(fake) is { } w && w.Contains("mixes alphabets"), "mixed alphabets are called out: " + Lookalike.Warning(fake));
+
+        // A whole word in another alphabet is also flagged, though not as mixed.
+        var allCyr = Origin.Of("https://\u0430\u0440\u0440\u04cf\u0435.com")!;
+        Expect(Lookalike.Warning(allCyr) is not null, "an all-Cyrillic imitation is at least flagged");
+
+        // An address that is not written correctly.
+        Expect(Lookalike.Warning("https://xn--zz--zz.example") is not null, "a broken xn-- label is flagged");
+        Expect(Lookalike.Warning("not an address") is null && Lookalike.Shown("not an address") == "not an address", "junk is left alone");
+    }
+
+    private static void FillScriptData()
+    {
+        var nasty = "p');alert(1)//\\\"</script>\n\u2028\u2029\u00e9 \ud83d\ude00 \0";
+        var script = FillScript.For("https://example.com", "us\"er", nasty);
+
+        Expect(script.StartsWith("(" + FillScript.Source + ")("), "the script is the fixed function applied to data");
+        Expect(script.EndsWith(");"), "and ends there");
+
+        // The data is the whole of what follows the function, and reads back exactly.
+        var json = script.Substring(FillScript.Source.Length + 3, script.Length - FillScript.Source.Length - 5);
+        using var doc = JsonDocument.Parse(json);
+        Expect(doc.RootElement.GetProperty("o").GetString() == "https://example.com", "origin");
+        Expect(doc.RootElement.GetProperty("u").GetString() == "us\"er", "user");
+        Expect(doc.RootElement.GetProperty("p").GetString() == nasty, "password with every awkward character");
+
+        // Nothing in the data can end the script's text early: no raw quote, newline or line separator
+        // outside what JSON escapes.
+        Expect(!json.Contains('\n') && !json.Contains('\u2028') && !json.Contains('\u2029'), "no raw line breaks in the data");
+        Expect(!json.Contains("</script>"), "no raw </script>");
+        Expect(json.Count(c => c == '{') == 1 && json.Count(c => c == '}') == 1, "the data is one flat object");
     }
 
     private sealed class FakeHello : IHello

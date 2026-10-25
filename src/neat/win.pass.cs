@@ -295,6 +295,9 @@ public sealed partial class Win
         }
 
         Bubble(entry is null ? "Password saved" : "Password updated", string.Empty, TimeSpan.FromSeconds(1.8));
+
+        // The page now has a saved login: the key button shows.
+        _ = Guard(UpdateKey, "updating the key button");
     }
 
     private void NeverHere()
@@ -366,6 +369,15 @@ public sealed partial class Win
             panel.Children.Add(bar);
         }
 
+        Present(panel, life);
+    }
+
+    /// <summary>
+    /// Puts a finished panel in the bubble and starts the timer that takes it down. The save question
+    /// and the fill list (win.fill.cs) both use it, so only one of them is up at a time.
+    /// </summary>
+    private void Present(UIElement panel, TimeSpan life)
+    {
         bubble.Child = panel;
         bubble.Visibility = Visibility.Visible;
 

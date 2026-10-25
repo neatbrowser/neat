@@ -84,6 +84,28 @@ public sealed record LoginInfo(
 public sealed record LoginMatch(Guid? Id, bool SamePassword);
 
 /// <summary>
+/// A saved login handed over to be filled into a page: the user name and the password. Dispose it
+/// as soon as the page has been given the values, which overwrites the password bytes.
+/// </summary>
+public sealed class Filling : IDisposable
+{
+    internal Filling(string user, Secret password)
+    {
+        User = user;
+        Password = password;
+    }
+
+    public string User { get; }
+
+    public Secret Password { get; }
+
+    public void Dispose()
+    {
+        Password.Dispose();
+    }
+}
+
+/// <summary>
 /// Proof that the person just passed the gate (Windows Hello or the NEAT password). Only the
 /// sign-in code makes one, and <see cref="Vault.Reveal"/> will not show a password without a
 /// valid one. It runs out after the time it was made with.

@@ -1,9 +1,9 @@
 {
   "name": "capture-check",
   "private": true,
-  "description": "Self-check of the save-password page script (src/neat/pass/capture.cs). Run: npm ci, then node check.js",
+  "description": "Self-check of the page scripts of the password vault (src/neat/pass/capture.cs and fill.cs). Run: npm ci, then npm test",
   "scripts": {
-    "test": "node check.js"
+    "test": "node check.js && node check-fill.js"
   },
   "devDependencies": {
     "jsdom": "^30.1.3"

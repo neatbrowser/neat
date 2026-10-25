@@ -321,6 +321,62 @@ public sealed class Vault : IDisposable
     }
 
     /// <summary>
+    /// Whether there is any login saved for exactly this origin. It needs no key, because the
+    /// origin of each entry is stored in the clear, so it works while a password vault is shut:
+    /// that is how the key button can show on a page before the vault is unlocked.
+    /// </summary>
+    public bool Has(string site)
+    {
+        var origin = Origin.Of(site);
+        if (origin is null)
+            return false;
+
+        lock (_gate)
+        {
+            return _file is not null && _file.Logins.Any(r => r.Site == origin);
+        }
+    }
+
+    /// <summary>True when a vault file is there, so that one that was never made is not made just to look.</summary>
+    public bool FileExists => File.Exists(_path);
+
+    /// <summary>
+    /// A login to fill into the page at <paramref name="pageUrl"/>, and only if the page's origin is
+    /// exactly the entry's. This is what stops a saved password reaching another site, another port,
+    /// or the http version of an https site, whatever the caller asks for. It needs no sign-in:
+    /// the password goes into the page the person is looking at, and is never shown. Null when
+    /// there is no such entry, it is for another origin, or it does not check out.
+    /// </summary>
+    public Filling? Fill(Guid id, string pageUrl)
+    {
+        var origin = Origin.Of(pageUrl);
+        if (origin is null)
+            return null;
+
+        lock (_gate)
+        {
+            var key = Key();
+            var row = Find(id);
+            if (row is null || row.Site != origin)
+                return null;
+
+            var user = Open(key, row, "user");
+            var pass = Open(key, row, "pass");
+            if (user is null || pass is null)
+            {
+                Seal.Wipe(user);
+                Seal.Wipe(pass);
+                return null;
+            }
+
+            var name = Encoding.UTF8.GetString(user);
+            Seal.Wipe(user);
+
+            return new Filling(name, new Secret(pass));
+        }
+    }
+
+    /// <summary>
     /// The password of an entry, only for someone who has just passed the gate. Null when there
     /// is no such entry or it does not check out. Dispose the result when done.
     /// </summary>

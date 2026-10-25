@@ -98,6 +98,7 @@
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
 
                     <Button
@@ -132,9 +133,25 @@
                             TextTrimming="CharacterEllipsis"/>
                     </Button>
 
+                    <!-- Shows only on a page that has a saved login (win.fill.cs). Nothing is ever filled
+                         until this is pressed and a login picked. -->
+                    <Button
+                        x:Name="keybtn"
+                        Grid.Column="2"
+                        Click="keybtn_Click"
+                        Visibility="Collapsed"
+                        Width="30"
+                        Height="22"
+                        Padding="0"
+                        Background="Transparent"
+                        BorderThickness="0"
+                        ToolTipService.ToolTip="Fill a saved login">
+                        <FontIcon Glyph="&#xE8D7;" FontSize="12"/>
+                    </Button>
+
                     <Button
                         x:Name="star"
-                        Grid.Column="2"
+                        Grid.Column="3"
                         Click="star_Click"
                         Width="30"
                         Height="22"
