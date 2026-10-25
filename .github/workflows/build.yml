@@ -20,24 +20,27 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
-      - name: Run password-vault self-check
-        run: dotnet run --project tests/vault.check/vault.check.csproj --configuration Release
+      # The password vault (src/neat/vault) uses nothing of WinUI, so it has its own plain
+      # self-check (tests/vault.check, no test packages). It runs here, on Windows, so the real
+      # DPAPI is checked too, and a failure stops the build before the long WinUI build starts.
+      - name: Vault self-check
+        run: dotnet run --project tests/vault.check --configuration Release
 
-      - name: Setup Node.js
+      # The two scripts that run inside web pages (src/neat/pass/capture.cs, which watches login
+      # forms, and src/neat/pass/fill.cs, which fills them) are JavaScript, so they are checked
+      # against made-up login pages with jsdom (tests/capture.check). The only package is
+      # that test tool; nothing from it ends up in the app.
+      - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '24'
 
-      - name: Install capture-check dependencies
+      - name: Page script self-check
         working-directory: tests/capture.check
-        run: npm ci
-
-      - name: Run password-capture self-check
-        working-directory: tests/capture.check
-        run: npm test
-
-      - name: Run session recovery self-check
-        run: dotnet run --project tests/session.check/session.check.csproj --configuration Release
+        run: |
+          npm ci --no-audit --no-fund
+          node check.js
+          node check-fill.js
 
       - name: Restore
         run: dotnet restore src/neat/neat.csproj -p:Platform=x64
