@@ -38,6 +38,7 @@ public sealed partial class Win : Window
         PaintInit();
         RoundInit();
         LibInit();
+        BlkInit();
 
         // The first tab opens once the window is up.
         root.Loaded += OnLoaded;
@@ -90,6 +91,7 @@ public sealed partial class Win : Window
         // (0xc000027b) and wrote a crash dump. Stop it from running at all.
         _closed = true;
         bar.LayoutUpdated -= BarLayout;
+        BlkStop();
 
         if (AppWindow.Presenter is not OverlappedPresenter p)
             return;
@@ -118,6 +120,9 @@ public sealed partial class Win : Window
 
         var tab = new Tab(new WebView2()) { Asked = to };
         host.Children.Add(tab.View);
+
+        // Clicking into the page puts the Blocker panel away (it is a small popup, not a window).
+        tab.View.GotFocus += (s, e) => BlkShow(false);
 
         // A reopened tab goes back where it was; any other goes at the end.
         if (at >= 0 && at <= _tabs.Count)
@@ -152,6 +157,7 @@ public sealed partial class Win : Window
 
         Hook(tab, core);
         HookPass(tab, core);
+        AdsHook(tab, core);
 
         // Must be in place before the first page loads. Without it only the
         // shortcuts for the window's own controls work, so a failure here
@@ -167,6 +173,16 @@ public sealed partial class Win : Window
 
         // The script of the save-password bubble (win.pass.cs), in place for the same reason.
         await AddPassScript(core);
+
+        // The first pages must not load before the blocker is ready (a few seconds at most).
+        if (to is not null && !App.Ads.Ready)
+        {
+            await App.Ads.WhenReady(TimeSpan.FromSeconds(5));
+
+            // The tab may have been closed while waiting.
+            if (!_tabs.Contains(tab) || tab.View.CoreWebView2 is null)
+                return tab;
+        }
 
         if (to is not null)
             core.Navigate(to);
@@ -220,6 +236,9 @@ public sealed partial class Win : Window
         core.NewWindowRequested += (s, e) =>
         {
             e.Handled = true;
+            if (AdsBlockPopup(tab, e.Uri))
+                return;
+
             Log.Write("tab", $"page asked for a new window, tabs now {_tabs.Count}");
             _ = Open(e.Uri);
         };

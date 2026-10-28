@@ -95,4 +95,37 @@ public sealed class Prefs
 
     /// <summary>True when the sidebar is docked beside the page, false when it is hidden.</summary>
     public bool Dock { get; set; } = true;
+
+    /// <summary>The ad blocker's settings (ads/ads.cs).</summary>
+    public AdPrefs Ads { get; set; } = new();
 }
+
+/// <summary>Settings of the ad blocker.</summary>
+public sealed class AdPrefs
+{
+    /// <summary>False turns the blocker off everywhere. Read once at start, so it applies after a restart.</summary>
+    public bool On { get; set; } = true;
+
+    /// <summary>Hosts (like "example.com") where the blocker does nothing.</summary>
+    public List<string> Off { get; set; } = new();
+
+    /// <summary>
+    /// True writes one line per request to ads-requests.tsv next to settings.json (what was asked,
+    /// what was answered, what was skipped and why). For finding out why a host got through. Read
+    /// once at start, so it applies after a restart.
+    /// </summary>
+    public bool Log { get; set; }
+
+    /// <summary>
+    /// True lets the blocker look for newer filter lists by itself and use them (the lists that
+    /// ship with the app are from the day it was built). Read once at start.
+    /// </summary>
+    public bool Update { get; set; } = true;
+
+    /// <summary>Hours between two looks for newer lists (1 to 168). The lists themselves are rebuilt every 6 hours.</summary>
+    public int UpdateHours { get; set; } = 6;
+
+    /// <summary>The GitHub repository whose latest release holds the lists (its web address; the API is not used).</summary>
+    public string UpdateRepo { get; set; } = "https://github.com/neatbrowser/neat-filters";
+}
+

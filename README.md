@@ -86,9 +86,59 @@ src/neat/
   pass/clip.cs      SecretClip: copy a password, not in clipboard history or cloud, cleared after 30 seconds
   opts.pass.cs      Settings > Passwords: protection, saved logins, show / copy / delete
   opts.pass.task.cs the cards that page opens: add a login, set or change the NEAT password, confirm a delete
+  ads/ads.cs        the ad blocker (App.Ads): loads the engine in the background, judges requests, popups and pages
+  ads/engine.cs     one loaded filter release behind neat_adblock.dll's C functions (thread-safe, frees itself)
+  ads/native.cs     the C functions of neat_adblock.dll (P/Invoke)
+  ads/filterdir.cs  checks a filter folder against its manifest.json hashes before the engine reads it
+  ads/cosmetic.cs   what the engine says to hide or run on a page (read from its JSON)
+  ads/pagejs.cs     fills in ads/page.js for one host
+  ads/page.js       the script every page gets: scriptlets, hiding by style sheet, generic rules by class and id
+  ads/blockpage.cs  the warning shown instead of a page that a page rule ($document / $all) stops; "Continue anyway" opens it
+  win.blk.cs        NEAT Blocker's chip in the title bar ("Blocked: N", beside Reload) and its panel (this page, in total, a switch for this site, the lists in use)
+  ads/filterupdate.cs  where releases live (FilterStore) and the list updater (FilterUpdater): download, check, switch
+  ads/requestlog.cs  optional one-line-per-request log (ads-requests.tsv), for finding out why a host got through
+  ads/adurl.cs, dataurl.cs, reqtype.cs, tabads.cs   small helpers: addresses, data: URLs, request types, per-tab state
+  win.ads.cs        the window's side of the blocker: WebResourceRequested, popups, page scripts
+tools/fetch-ads.ps1 downloads neat_adblock.dll and the filter lists into ads-dl\ (CI runs it before the build)
+tests/ads.check/    the blocker's self-checks: C# pieces (dotnet run) and the page script (node page.check.mjs)
 tests/vault.check/  the vault's self-check (plain asserts, no packages), run by CI before the build
 tests/capture.check/ the page scripts' self-check: made-up login forms in jsdom (needs Node; npm ci, npm test)
 ```
+
+## Ad blocker
+
+Blocking is done by Brave's adblock-rust, built as `neat_adblock.dll` (repository `neat-adblock`),
+fed by the uBlock Origin lists that `neat-filters` rebuilds every 6 hours. At build time
+`tools/fetch-ads.ps1` puts the dll next to `neat.exe` and the lists in a `filters` folder there.
+Without them the app still runs, with no blocker (the log says so: `ads` lines in the log).
+
+What it does today: stops network requests, replaces some with harmless stand-ins (blank script,
+pixel), stops popups, hides elements (cosmetic rules, including generic ones by class and id) and
+runs uBO scriptlets before the page's own scripts, handles procedural cosmetic rules (`:has-text`
+and the like), watches requests from workers, and stops a page itself when a page rule (`$document`,
+`$all`) says so, with a warning that has "Go back" and "Continue anyway" (as uBO, an ordinary
+`||host^` rule does not stop a visit). What it does not do yet: `$removeparam`, `$csp`, HTML
+filtering.
+
+Lists update themselves: 30 seconds after start and then every 6 hours the blocker reads the
+latest `neat-filters` release (its ordinary web addresses on github.com, not the API, which allows only 60 requests an hour for each address), and when its version is newer than
+the one in use it downloads the files that changed (the others are copied from what is here),
+checks every file against the manifest, and only then switches to the new release without a
+restart. Releases are kept in `%LOCALAPPDATA%\NEAT\filters-dl\<version>` (the newest two); the
+release next to neat.exe is the fallback. The engine built from the release in use is saved to
+`%LOCALAPPDATA%\NEAT\ads-cache\engine.bin` (about 40 MB), so the next start does not read the
+lists again. For this the `neat-filters` releases must be public.
+
+NEAT Blocker panel: the chip "Blocked: N" in the title bar, beside Reload, shows the total stopped
+since NEAT started. Clicking it opens a panel at the page's top-left corner (it moves with the page
+when the sidebar is docked or put away) with the count for this page and in total, a switch for the
+blocker on this site (it adds the site to `Off` and reloads the page) and the filter version.
+A site in `Off` also covers its subdomains: `example.com` switches the blocker off on `www.example.com`.
+
+Settings (`settings.json`, browser closed):
+`"Ads": { "On": true, "Off": ["example.com"], "Update": true, "UpdateHours": 6, "UpdateRepo": "https://github.com/neatbrowser/neat-filters" }`.
+`On: false` switches the blocker off; `Off` lists hosts where it does nothing; `Update: false` keeps
+the lists that are there; `UpdateHours` is how often to look (1 to 168).
 
 ## Where data is saved
 
