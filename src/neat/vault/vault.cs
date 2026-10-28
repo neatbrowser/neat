@@ -337,6 +337,191 @@ public sealed class Vault : IDisposable
         }
     }
 
+    /// <summary>
+    /// The entries for this origin whose password is <paramref name="oldPassword"/>, for a page where the
+    /// person changed a password: those are the entries the new password replaces. A user name narrows
+    /// it down; an empty one (change-password pages usually have none) matches any. Like
+    /// <see cref="Lookup"/> it answers only with ids and hands out no value.
+    /// </summary>
+    public IReadOnlyList<Guid> MatchOld(string site, string user, string oldPassword)
+    {
+        var origin = Origin.Of(site);
+        if (origin is null)
+            return Array.Empty<Guid>();
+
+        var wantUser = Encoding.UTF8.GetBytes(user);
+        var wantPass = Encoding.UTF8.GetBytes(oldPassword);
+
+        try
+        {
+            lock (_gate)
+            {
+                var key = Key();
+                var found = new List<Guid>();
+
+                foreach (var row in _file!.Logins.Where(r => r.Site == origin))
+                {
+                    if (!Guid.TryParse(row.Id, out var id))
+                        continue;
+
+                    var pass = Open(key, row, "pass");
+                    var samePass = pass is not null && CryptographicOperations.FixedTimeEquals(pass, wantPass);
+                    Seal.Wipe(pass);
+                    if (!samePass)
+                        continue;
+
+                    if (user.Length > 0)
+                    {
+                        var have = Open(key, row, "user");
+                        var sameUser = have is not null && CryptographicOperations.FixedTimeEquals(have, wantUser);
+                        Seal.Wipe(have);
+                        if (!sameUser)
+                            continue;
+                    }
+
+                    found.Add(id);
+                }
+
+                return found;
+            }
+        }
+        finally
+        {
+            Seal.Wipe(wantUser);
+            Seal.Wipe(wantPass);
+        }
+    }
+
+    /// <summary>
+    /// Every login, with its password, for an export. Only for someone who has just passed the gate.
+    /// Entries that do not check out are left out and counted.
+    /// </summary>
+    public ExportResult Export(Access access)
+    {
+        if (access is null || !access.Valid)
+            throw new UnauthorizedAccessException("The sign-in has expired.");
+
+        lock (_gate)
+        {
+            var key = Key();
+            var rows = new List<ImportRow>();
+            var damaged = 0;
+
+            foreach (var row in _file!.Logins)
+            {
+                var user = Open(key, row, "user");
+                var pass = Open(key, row, "pass");
+
+                if (user is null || pass is null)
+                    damaged++;
+                else
+                    rows.Add(new ImportRow(row.Site, Encoding.UTF8.GetString(user), Encoding.UTF8.GetString(pass)));
+
+                Seal.Wipe(user);
+                Seal.Wipe(pass);
+            }
+
+            return new ExportResult(rows, damaged);
+        }
+    }
+
+    /// <summary>
+    /// Adds logins from another browser's export, all in one write. A login that is already saved the
+    /// same way is not added again; one for the same user name with another password is NOT
+    /// replaced (the saved one stays, and it is counted as a conflict); everything else is added.
+    /// With <paramref name="commit"/> false nothing is changed and the result says what would happen,
+    /// so the person can be asked first.
+    /// </summary>
+    public ImportResult Import(IReadOnlyList<ImportRow> rows, bool commit)
+    {
+        lock (_gate)
+        {
+            var key = Key();
+
+            // What is saved, by site and user name: the passwords it has.
+            var known = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
+
+            foreach (var row in _file!.Logins)
+            {
+                var user = Open(key, row, "user");
+                var pass = Open(key, row, "pass");
+
+                if (user is not null && pass is not null)
+                {
+                    var at = row.Site + "\n" + Encoding.UTF8.GetString(user);
+                    if (!known.TryGetValue(at, out var set))
+                        known[at] = set = new HashSet<string>(StringComparer.Ordinal);
+
+                    set.Add(Encoding.UTF8.GetString(pass));
+                }
+
+                Seal.Wipe(user);
+                Seal.Wipe(pass);
+            }
+
+            var added = new List<VaultRow>();
+            int already = 0, conflicts = 0, skipped = 0;
+            var now = DateTimeOffset.UtcNow;
+
+            foreach (var item in rows)
+            {
+                var origin = Origin.Of(item.Site);
+                if (origin is null || item.Password.Length == 0)
+                {
+                    skipped++;
+                    continue;
+                }
+
+                var at = origin + "\n" + item.User;
+                if (known.TryGetValue(at, out var passwords))
+                {
+                    if (passwords.Contains(item.Password))
+                        already++;
+                    else
+                        conflicts++;
+
+                    continue;
+                }
+
+                known[at] = new HashSet<string>(StringComparer.Ordinal) { item.Password };
+
+                if (!commit)
+                {
+                    added.Add(null!);
+                    continue;
+                }
+
+                var id = Guid.NewGuid();
+                added.Add(new VaultRow
+                {
+                    Id = id.ToString("N"),
+                    Site = origin,
+                    User = Sealed(key, id, origin, "user", item.User),
+                    Pass = Sealed(key, id, origin, "pass", item.Password),
+                    Created = now,
+                    Changed = now,
+                });
+            }
+
+            if (commit && added.Count > 0)
+            {
+                var before = _file.Logins.Count;
+                _file.Logins.AddRange(added);
+                try
+                {
+                    Write();
+                }
+                catch
+                {
+                    _file.Logins.RemoveRange(before, added.Count);
+                    throw;
+                }
+            }
+
+            return new ImportResult(added.Count, already, conflicts, skipped);
+        }
+    }
+
     /// <summary>True when a vault file is there, so that one that was never made is not made just to look.</summary>
     public bool FileExists => File.Exists(_path);
 

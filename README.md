@@ -79,6 +79,9 @@ src/neat/
   win.fill.cs       the key button in the address chip and the list of logins to fill; runs the fill script
   pass/fill.cs      the script that fills a login into a page (JavaScript in a C# string)
   vault/lookalike.cs how an address is shown before filling, and the warning for fake-looking ones
+  vault/csv.cs      reading and writing CSV, the format other browsers export passwords in
+  vault/exchange.cs turns another browser's password export into logins, and logins into one
+  opts.pass.exchange.cs Settings > Passwords, third part: never-save list, editing a login, import and export
   pass/hello.cs     Windows Hello, behind the gate's IHello
   pass/clip.cs      SecretClip: copy a password, not in clipboard history or cloud, cleared after 30 seconds
   opts.pass.cs      Settings > Passwords: protection, saved logins, show / copy / delete

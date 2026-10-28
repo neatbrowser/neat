@@ -235,15 +235,89 @@ check('sign-up: two equal passwords are one new password', () => {
   expect(p.got()[0].p === 'same-pass', 'sign-up not reported');
 });
 
-check('two different passwords, or three, are left alone (changing a password)', () => {
+check('two different passwords with nothing to tell them apart are left alone', () => {
   const two = load(`<form onsubmit="return false"><input id="p1" type="password"><input id="p2" type="password"><button id="go">Go</button></form>`);
   two.set('#p1', 'one'); two.set('#p2', 'two'); two.click('#go');
   expect(two.got().length === 0, 'two different passwords were reported');
 
-  const three = load(`<form onsubmit="return false"><input id="p0" type="password"><input id="p1" type="password">
+  const odd = load(`<form onsubmit="return false"><input id="p0" type="password"><input id="p1" type="password">
     <input id="p2" type="password"><button id="go">Go</button></form>`);
-  three.set('#p0', 'old'); three.set('#p1', 'new'); three.set('#p2', 'new'); three.click('#go');
-  expect(three.got().length === 0, 'a change-password form was reported');
+  odd.set('#p0', 'a'); odd.set('#p1', 'b'); odd.set('#p2', 'c'); odd.click('#go');
+  expect(odd.got().length === 0, 'three different passwords were reported');
+
+  const same = load(`<form onsubmit="return false"><input id="p0" type="password"><input id="p1" type="password">
+    <input id="p2" type="password"><button id="go">Go</button></form>`);
+  same.set('#p0', 'x'); same.set('#p1', 'x'); same.set('#p2', 'x'); same.click('#go');
+  expect(same.got().every(m => m.o === undefined), 'three equal passwords were taken as a change');
+});
+
+check('a change-password form is reported as the new password with the old one beside it', () => {
+  const three = load(`<form onsubmit="return false"><input id="p0" type="password"><input id="p1" type="password">
+    <input id="p2" type="password"><button id="go">Change</button></form>`);
+  three.set('#p0', 'old-pass'); three.set('#p1', 'new-pass'); three.set('#p2', 'new-pass'); three.click('#go');
+  const m = three.got().filter(x => x.t === 'offer');
+  expect(m.length === 1 && m[0].p === 'new-pass' && m[0].o === 'old-pass', 'got ' + JSON.stringify(m));
+  expect(three.live() === 1, 'the form is watched');
+});
+
+check('the same new password with another old one is a different report, not a repeat', () => {
+  const p = load(`<form onsubmit="return false"><input id="p0" type="password"><input id="p1" type="password">
+    <input id="p2" type="password"><button id="go">Change</button></form>`);
+  p.set('#p0', 'old-one'); p.set('#p1', 'new'); p.set('#p2', 'new'); p.click('#go');
+  p.set('#p0', 'old-two'); p.click('#go');
+  const m = p.got().filter(x => x.t === 'offer');
+  expect(m.length === 2 && m[0].o === 'old-one' && m[1].o === 'old-two', 'got ' + JSON.stringify(m));
+});
+
+check('fields marked current-password and new-password say which is which', () => {
+  const one = load(`<form onsubmit="return false"><input id="c" type="password" autocomplete="current-password">
+    <input id="n" type="password" autocomplete="new-password"><button id="go">Change</button></form>`);
+  one.set('#c', 'old-pass'); one.set('#n', 'new-pass'); one.click('#go');
+  let m = one.got().find(x => x.t === 'offer');
+  expect(m && m.p === 'new-pass' && m.o === 'old-pass', 'marked, no confirmation field: ' + JSON.stringify(m));
+
+  // The new password first in the page: the marks decide, not the order.
+  const swapped = load(`<form onsubmit="return false"><input id="n" type="password" autocomplete="new-password">
+    <input id="c" type="password" autocomplete="current-password"><button id="go">Change</button></form>`);
+  swapped.set('#c', 'old-pass'); swapped.set('#n', 'new-pass'); swapped.click('#go');
+  m = swapped.got().find(x => x.t === 'offer');
+  expect(m && m.p === 'new-pass' && m.o === 'old-pass', 'marks, other order: ' + JSON.stringify(m));
+
+  // Two new-password fields that agree (new + confirm) next to the current one.
+  const confirm = load(`<form onsubmit="return false"><input id="c" type="password" autocomplete="current-password">
+    <input id="n1" type="password" autocomplete="new-password"><input id="n2" type="password" autocomplete="new-password">
+    <button id="go">Change</button></form>`);
+  confirm.set('#c', 'old-pass'); confirm.set('#n1', 'new-pass'); confirm.set('#n2', 'new-pass'); confirm.click('#go');
+  m = confirm.got().find(x => x.t === 'offer');
+  expect(m && m.p === 'new-pass' && m.o === 'old-pass', 'with a confirmation field: ' + JSON.stringify(m));
+
+  // New passwords that disagree: a typing mistake, nothing to report.
+  const mistake = load(`<form onsubmit="return false"><input id="c" type="password" autocomplete="current-password">
+    <input id="n1" type="password" autocomplete="new-password"><input id="n2" type="password" autocomplete="new-password">
+    <button id="go">Change</button></form>`);
+  mistake.set('#c', 'old'); mistake.set('#n1', 'one'); mistake.set('#n2', 'two'); mistake.click('#go');
+  expect(mistake.got().length === 0, 'new passwords that disagree were reported');
+
+  // The same password in both: not a change.
+  const nochange = load(`<form onsubmit="return false"><input id="c" type="password" autocomplete="current-password">
+    <input id="n" type="password" autocomplete="new-password"><button id="go">Change</button></form>`);
+  nochange.set('#c', 'same'); nochange.set('#n', 'same'); nochange.click('#go');
+  expect(nochange.got().every(m => m.o === undefined), 'an unchanged password was taken as a change');
+
+  // An old password that is too long is not reported at all.
+  const long = load(`<form onsubmit="return false"><input id="p0" type="password"><input id="p1" type="password">
+    <input id="p2" type="password"><button id="go">Change</button></form>`);
+  long.set('#p0', 'x'.repeat(513)); long.set('#p1', 'new'); long.set('#p2', 'new'); long.click('#go');
+  expect(long.got().length === 0, 'an old password of 513 characters was reported');
+});
+
+check('a sign-up form with one marked new-password field is still a sign-up', () => {
+  const p = load(`<form onsubmit="return false"><input id="u" type="text" value="alice">
+    <input id="n1" type="password" autocomplete="new-password"><input id="n2" type="password" autocomplete="new-password">
+    <button id="go">Sign up</button></form>`);
+  p.set('#n1', 'chosen'); p.set('#n2', 'chosen'); p.click('#go');
+  const m = p.got().find(x => x.t === 'offer');
+  expect(m && m.p === 'chosen' && m.o === undefined && m.u === 'alice', 'got ' + JSON.stringify(m));
 });
 
 check('a page with no form at all works too (a script-driven login)', () => {

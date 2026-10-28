@@ -14,6 +14,10 @@ namespace neat;
 ///     it only gets NEAT to ask the person whether to save what the page itself already has.
 ///   - It reports a login, it does not decide. Whether it worked is found out afterwards,
 ///     by the window (see vault/capture.cs).
+///   - A change-password form (the old password, then the new one twice; or fields marked
+///     autocomplete current-password and new-password) is reported as the new password with the
+///     old one beside it, so the window can find the saved entry it replaces. Two different
+///     passwords with nothing to say which is which are left alone: that may just be a typing mistake.
 ///   - Two-step logins (user name on one page, password on the next) are reported in two parts: the
 ///     first step sends only the user name, and the window puts the two together. A password page
 ///     may also carry the user name in a hidden field marked autocomplete="username" (that is what
@@ -108,18 +112,34 @@ internal static class CaptureScript
             const shown = Array.from(root.querySelectorAll('input[type="password"]')).filter(i => visible(i));
             if (shown.length === 0) { step(root); return; }
             const pws = shown.filter(i => i.value.length > 0);
+            const mark = i => (i.getAttribute('autocomplete') || '').toLowerCase();
+            const current = pws.filter(i => mark(i) === 'current-password');
+            const fresh = pws.filter(i => mark(i) === 'new-password');
             let pick = null;
-            if (pws.length === 1) pick = pws[0];
+            let old = null;
+            if (current.length === 1 && fresh.length >= 1 && fresh.every(i => i.value === fresh[0].value) &&
+                fresh[0].value !== current[0].value) {
+              // A change-password form that says which field is which: the old password and the new one.
+              old = current[0].value;
+              pick = fresh[0];
+            } else if (pws.length === 1) pick = pws[0];
             else if (pws.length === 2 && pws[0].value === pws[1].value) pick = pws[0];
-            if (!pick || pick.value.length > MAX) return;
+            else if (pws.length === 3 && pws[1].value === pws[2].value && pws[0].value !== pws[1].value) {
+              // Old password, then the new one twice.
+              old = pws[0].value;
+              pick = pws[1];
+            }
+            if (!pick || pick.value.length > MAX || (old !== null && old.length > MAX)) return;
             const u = userFor(pick, root) || hiddenUser(root);
             // One login often makes two reports at once (Enter, then the click the browser
             // makes on the button): the second is the same login and is left out.
             const now = Date.now();
-            if (last && last.u === u && last.p === pick.value && now - last.at < 1500) return;
-            last = { u: u, p: pick.value, at: now };
+            if (last && last.u === u && last.p === pick.value && last.o === old && now - last.at < 1500) return;
+            last = { u: u, p: pick.value, o: old, at: now };
             const id = ++seq;
-            post({ t: 'offer', id: id, u: u, p: pick.value });
+            const report = { t: 'offer', id: id, u: u, p: pick.value };
+            if (old !== null) report.o = old;
+            post(report);
             watch(pick, id);
           };
 

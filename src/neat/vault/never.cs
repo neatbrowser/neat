@@ -25,6 +25,12 @@ public static class Never
         return true;
     }
 
+    /// <summary>Takes an origin off the list. False when it was not there.</summary>
+    public static bool Remove(List<string> list, string origin)
+    {
+        return list.RemoveAll(o => string.Equals(o, origin, StringComparison.Ordinal)) > 0;
+    }
+
     /// <summary>A list read from disk, put in order: only real origins, written one way, once each.</summary>
     public static List<string> Clean(IEnumerable<string>? raw)
     {

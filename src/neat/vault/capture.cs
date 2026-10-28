@@ -3,7 +3,7 @@ namespace neat;
 /// <summary>
 /// A login a page showed NEAT, waiting to find out whether it worked.
 /// </summary>
-public sealed record Pending(string Site, string User, string Password, DateTime At);
+public sealed record Pending(string Site, string User, string Password, DateTime At, string? Old = null);
 
 /// <summary>
 /// Remembers, for each tab, the login the person has just submitted, until it is known whether
@@ -50,12 +50,16 @@ public sealed class Capture
     /// Holds a login for a tab, replacing any it held. False (and nothing held) when it is not
     /// worth holding: not a web origin, no password, or longer than <see cref="MaxLength"/>.
     /// </summary>
-    public bool Hold(object tab, string site, string user, string password)
+    public bool Hold(object tab, string site, string user, string password, string? old = null)
     {
         var origin = Origin.Of(site);
 
         if (origin is null || password.Length == 0 || password.Length > MaxLength || user.Length > MaxLength)
             return false;
+
+        // The password the person had before, when the page was a change-password form.
+        if (old is not null && (old.Length == 0 || old.Length > MaxLength || old == password))
+            old = null;
 
         // A password page with no user name of its own: use the one from the step before, if it was
         // on the same site and not long ago. A user name that came with the login is never replaced.
@@ -65,7 +69,7 @@ public sealed class Capture
             user = known.User;
         }
 
-        _held[tab] = new Pending(origin, user, password, Clock());
+        _held[tab] = new Pending(origin, user, password, Clock(), old);
         return true;
     }
 

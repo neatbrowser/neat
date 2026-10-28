@@ -83,6 +83,12 @@ public sealed record LoginInfo(
 /// </summary>
 public sealed record LoginMatch(Guid? Id, bool SamePassword);
 
+/// <summary>What an import did, or would do: how many logins are new, already saved, differ from a saved one, or could not be used.</summary>
+public sealed record ImportResult(int Added, int Already, int Conflicts, int Skipped);
+
+/// <summary>Every saved login, for an export, and how many entries could not be read.</summary>
+public sealed record ExportResult(List<ImportRow> Rows, int Damaged);
+
 /// <summary>
 /// A saved login handed over to be filled into a page: the user name and the password. Dispose it
 /// as soon as the page has been given the values, which overwrites the password bytes.

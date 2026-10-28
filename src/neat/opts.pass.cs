@@ -225,6 +225,8 @@ public sealed partial class Opts
         {
             body.Children.Add(Block.Head(_skin, "Unlock"));
             body.Children.Add(UnlockCard());
+            body.Children.Add(Block.Head(_skin, "Never saved for"));
+            body.Children.Add(NeverCard());
             body.Children.Add(Block.Head(_skin, "What the vault protects"));
             body.Children.Add(Block.Card(_skin, Explain(Honest)));
             return;
@@ -238,6 +240,12 @@ public sealed partial class Opts
         _rows = new StackPanel();
         body.Children.Add(Block.Card(_skin, _rows));
         RenderList();
+
+        body.Children.Add(Block.Head(_skin, "Never saved for"));
+        body.Children.Add(NeverCard());
+
+        body.Children.Add(Block.Head(_skin, "Import and export"));
+        body.Children.Add(ExchangeCard());
 
         body.Children.Add(Block.Head(_skin, "What the vault protects"));
         body.Children.Add(Block.Card(_skin, Explain(Honest)));
@@ -434,6 +442,7 @@ public sealed partial class Opts
         var tools = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
         tools.Children.Add(IconBtn("\uE890", seen ? "Hide password" : "Show password", () => ToggleShow(it), usable));
         tools.Children.Add(IconBtn("\uE8C8", "Copy password", () => CopyRow(it), usable));
+        tools.Children.Add(IconBtn("\uE70F", "Edit", () => EditRow(it), _prot != Protection.None));
         tools.Children.Add(IconBtn("\uE74D", "Delete", () => DeleteRow(it), _prot != Protection.None));
 
         return Block.Row(_skin, it.Site, second, tools);
@@ -526,6 +535,15 @@ public sealed partial class Opts
 
         _clip?.Copy(secret.Text());
         Say("Copied. It is taken off the clipboard after " + (int)SecretClip.Keep.TotalSeconds + " seconds.");
+    }
+
+    private async Task EditRow(LoginInfo it)
+    {
+        var access = await Authorize("Edit the saved login for " + it.Site);
+        if (access is null || _body is null)
+            return;
+
+        TaskEdit(it);
     }
 
     private async Task DeleteRow(LoginInfo it)

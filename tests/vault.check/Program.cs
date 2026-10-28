@@ -64,6 +64,15 @@ internal static class Program
         Run("fill never hands a login out for a damaged entry or a shut vault", FillSafety);
         Run("addresses are shown in a form that is hard to fake, with a warning when needed", LookalikeAddresses);
         Run("the fill script gets the login as data, not as text", FillScriptData);
+        Run("csv is read and written the way browsers do it", CsvRoundTrip);
+        Run("exports from Chrome, Edge and Firefox are read by their column names", ExchangeRead);
+        Run("what is written can be read back, awkward passwords included", ExchangeWrite);
+        Run("import adds new logins, skips saved ones and keeps conflicting ones", ImportLogins);
+        Run("import in one write, and a preview changes nothing", ImportAtomic);
+        Run("export needs a sign-in and gives every login", ExportLogins);
+        Run("a changed password finds the entry it replaces", MatchOldPassword);
+        Run("a change-password form keeps the old password with the held login", CaptureOld);
+        Run("a site can be taken off the never list", NeverRemove);
         Run("the vault code never logs", NoLogging);
         Run("the real number of PBKDF2 rounds works", RealRounds);
 
@@ -1306,6 +1315,251 @@ internal static class Program
         Expect(!json.Contains('\n') && !json.Contains('\u2028') && !json.Contains('\u2029'), "no raw line breaks in the data");
         Expect(!json.Contains("</script>"), "no raw </script>");
         Expect(json.Count(c => c == '{') == 1 && json.Count(c => c == '}') == 1, "the data is one flat object");
+    }
+
+    // ---- import, export and changed passwords ----
+
+    private static void CsvRoundTrip()
+    {
+        var rows = Csv.Parse("a,b,c\r\n1,\"two, with comma\",3\n\"quote \"\"inside\"\"\",\"line\nbreak\",x\n\n,,\nlast,row,no-newline");
+        Expect(rows.Count == 5, "five rows (the blank line is not one): " + rows.Count);
+        Expect(rows[1][1] == "two, with comma", "a comma inside quotes");
+        Expect(rows[2][0] == "quote \"inside\"" && rows[2][1] == "line\nbreak", "doubled quotes and a line break inside quotes");
+        Expect(rows[3].Length == 3 && rows[3].All(f => f.Length == 0), "a row of empty fields is kept");
+        Expect(rows[4][2] == "no-newline", "a last line with no line break");
+
+        Expect(Csv.Parse("\uFEFFurl,password\r\nhttps://a.example,p").First()[0] == "url", "a byte order mark is dropped");
+        Expect(Csv.Parse("").Count == 0 && Csv.Parse("\n\n").Count == 0, "nothing in, nothing out");
+        Expect(Csv.Parse("a,b\rc,d").Count == 2, "a bare CR ends a row");
+        Expect(Csv.Parse("a\"b,c")[0][0] == "a\"b", "a quote in the middle of a field is just a quote");
+
+        Expect(Csv.Field("plain") == "plain" && Csv.Field("") == "", "plain stays plain");
+        Expect(Csv.Field("a,b") == "\"a,b\"" && Csv.Field("a\"b") == "\"a\"\"b\"" && Csv.Field(" x") == "\" x\"", "quoted when needed");
+
+        foreach (var value in new[] { "", "plain", "with, comma", "quote\"s", "two\nlines", "cr\rlf", " spaced ", "\"", ",", "\"\"", "a\"\",b", "\u00e9\ud83d\ude00" })
+        {
+            var back = Csv.Parse(Csv.Row("x", value, "y"));
+            Expect(back.Count == 1 && back[0].Length == 3 && back[0][1] == value, "round trip of " + System.Text.Json.JsonSerializer.Serialize(value));
+        }
+    }
+
+    private static void ExchangeRead()
+    {
+        var chrome = "name,url,username,password,note\r\n"
+            + "example,https://example.com/login,alice,p1,\r\n"
+            + "app,android://abc@com.example.app/,bob,p2,\r\n"
+            + "nopass,https://nopass.example,carol,,\r\n"
+            + "keep,https://Keep.example:8443/x,dave,\"p,3\",note\r\n";
+        var r = Exchange.Read(chrome);
+        Expect(r.Problem is null && r.Rows.Count == 2 && r.Skipped == 2, $"chrome: {r.Rows.Count} rows, {r.Skipped} skipped, {r.Problem}");
+        Expect(r.Rows[0] == new ImportRow("https://example.com", "alice", "p1"), "the site is reduced to its origin");
+        Expect(r.Rows[1] == new ImportRow("https://keep.example:8443", "dave", "p,3"), "port kept, comma in a password kept");
+
+        var firefox = "\"url\",\"username\",\"password\",\"httpRealm\",\"formActionOrigin\",\"guid\",\"timeCreated\"\r\n"
+            + "\"https://fox.example\",\"fred\",\"secret\",\"\",\"https://fox.example\",\"{1}\",\"1\"\r\n";
+        var f = Exchange.Read(firefox);
+        Expect(f.Rows.Count == 1 && f.Rows[0] == new ImportRow("https://fox.example", "fred", "secret"), "firefox");
+
+        var shuffled = Exchange.Read("PASSWORD , URL ,Username\np,https://s.example,u");
+        Expect(shuffled.Rows.Count == 1 && shuffled.Rows[0].User == "u", "any column order, any case");
+
+        Expect(Exchange.Read("").Problem is not null, "an empty file");
+        Expect(Exchange.Read("name,note\nx,y").Problem is not null, "a file that is not a password export");
+        Expect(Exchange.Read("username,password\nu,p").Problem is not null, "a file with passwords but no addresses cannot be imported");
+        Expect(Exchange.Read("url,username\nhttps://a.example,u").Problem is not null, "a file with addresses but no passwords cannot be imported");
+        Expect(Exchange.Read("url,password\nhttp://a.example,p").Rows.Count == 1, "a file with no user name column");
+
+        var tooLong = Exchange.Read("url,username,password\nhttps://a.example,u," + new string('x', Capture.MaxLength + 1));
+        Expect(tooLong.Rows.Count == 0 && tooLong.Skipped == 1, "a password that long is skipped");
+
+        var many = "url,password\n" + string.Concat(Enumerable.Range(0, Exchange.MaxRows + 1).Select(i => $"https://s{i}.example,p\n"));
+        Expect(Exchange.Read(many).Problem is not null, "more rows than the limit");
+    }
+
+    private static void ExchangeWrite()
+    {
+        var rows = new List<ImportRow>
+        {
+            new("https://a.example", "alice", "plain"),
+            new("https://b.example:8443", "", "with, comma and \"quotes\""),
+            new("http://c.example", "carol@c.example", "two\nlines \u00e9\ud83d\ude00 "),
+        };
+
+        var text = Exchange.Write(rows);
+        Expect(text.StartsWith("name,url,username,password,note\r\n"), "the header Chrome writes");
+
+        var back = Exchange.Read(text);
+        Expect(back.Problem is null && back.Skipped == 0 && back.Rows.SequenceEqual(rows), "what was written reads back the same");
+    }
+
+    private static void ImportLogins()
+    {
+        var path = TempFile();
+        var v = NewVault(path);
+        v.Open();
+        v.Add("https://a.example", "alice", "saved-a");
+        v.Add("https://b.example", "bob", "saved-b");
+
+        var rows = new List<ImportRow>
+        {
+            new("https://a.example", "alice", "saved-a"),          // already saved
+            new("https://b.example", "bob", "different"),          // same user, other password: conflict
+            new("https://c.example", "carol", "new-c"),            // new
+            new("https://c.example", "carol", "new-c"),            // repeated in the file
+            new("https://c.example", "carol", "another-c"),        // same user again with another password
+            new("https://d.example", "", "no-name"),               // new, no user name
+            new("javascript:1", "x", "y"),                          // not a site
+            new("https://e.example", "eve", ""),                    // no password
+        };
+
+        var result = v.Import(rows, true);
+        Expect(result == new ImportResult(2, 2, 2, 2), "result: " + result);
+
+        var list = v.List();
+        Expect(list.Count == 4, "four entries now: " + list.Count);
+        Expect(RevealText(v, v.Find("https://b.example").Single().Id) == "saved-b", "the conflicting login was not replaced");
+        Expect(RevealText(v, v.Find("https://c.example").Single().Id) == "new-c", "the first of the repeats won");
+        Expect(v.Lookup("https://d.example", "", "no-name").SamePassword, "a login with no user name");
+
+        // Importing the same file again adds nothing.
+        var again = v.Import(rows, true);
+        Expect(again.Added == 0 && again.Already == 4, "the second import adds nothing: " + again);
+
+        // It survived the write.
+        var reopened = NewVault(path);
+        reopened.Open();
+        Expect(reopened.List().Count == 4, "four entries on disk");
+    }
+
+    private static void ImportAtomic()
+    {
+        var path = TempFile();
+        var v = NewVault(path);
+        v.Open();
+        v.Add("https://a.example", "alice", "p");
+        var before = File.ReadAllBytes(path);
+
+        var rows = Enumerable.Range(0, 50).Select(i => new ImportRow($"https://s{i}.example", "u", "p" + i)).ToList();
+
+        var preview = v.Import(rows, false);
+        Expect(preview.Added == 50, "the preview counts them: " + preview);
+        Expect(before.SequenceEqual(File.ReadAllBytes(path)) && v.List().Count == 1, "a preview must change nothing");
+
+        // A write that fails leaves the vault as it was.
+        var blocked = TempFile();
+        var folder = Path.GetDirectoryName(blocked)!;
+        var w = NewVault(blocked);
+        w.Open();
+        w.Add("https://a.example", "alice", "p");
+        Directory.Delete(folder, true);
+        File.WriteAllText(folder, "now a file");
+        try
+        {
+            ExpectThrows<IOException>(() => w.Import(rows, true), "a failed write throws");
+            Expect(w.List().Count == 1, "and nothing of the import stays in memory");
+        }
+        finally
+        {
+            File.Delete(folder);
+        }
+
+        // One write for the whole file, however many logins.
+        var big = NewVault(TempFile());
+        big.Open();
+        var many = Enumerable.Range(0, 500).Select(i => new ImportRow($"https://s{i}.example", "u", "p" + i)).ToList();
+        Expect(big.Import(many, true).Added == 500 && big.List().Count == 500, "500 logins at once");
+    }
+
+    private static void ExportLogins()
+    {
+        var v = NewVault(TempFile());
+        v.Open();
+        v.Add("https://a.example", "alice", "pw-a");
+        v.Add("https://b.example", "", "pw, b");
+
+        var clock = new DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+        var access = new Access(TimeSpan.FromMinutes(1), () => clock);
+        Expect(v.Export(access).Rows.Count == 2, "(sanity) a valid sign-in can export");
+        clock = clock.AddMinutes(5);
+        ExpectThrows<UnauthorizedAccessException>(() => v.Export(access), "an expired sign-in cannot export");
+        ExpectThrows<UnauthorizedAccessException>(() => v.Export(null!), "no sign-in cannot export");
+
+        var result = v.Export(Good);
+        Expect(result.Damaged == 0 && result.Rows.Count == 2, "two logins");
+        Expect(result.Rows.Any(r => r.User == "alice" && r.Password == "pw-a" && r.Site == "https://a.example"), "the first");
+        Expect(result.Rows.Any(r => r.User == "" && r.Password == "pw, b"), "the second");
+
+        // Out through a file and back in to another vault.
+        var other = NewVault(TempFile());
+        other.Open();
+        var read = Exchange.Read(Exchange.Write(result.Rows));
+        Expect(other.Import(read.Rows, true).Added == 2, "the export imports into another vault");
+
+        // A damaged entry is left out and counted.
+        var path = TempFile();
+        var d = NewVault(path);
+        d.Open();
+        d.Add("https://a.example", "u", "p");
+        d.Add("https://b.example", "u", "p");
+        var json = Read(path);
+        json["Logins"]![0]!["Site"] = "https://evil.example";
+        Save(path, json);
+        var again = NewVault(path);
+        again.Open();
+        var partial = again.Export(Good);
+        Expect(partial.Damaged == 1 && partial.Rows.Count == 1, "damaged: " + partial.Damaged);
+
+        var shut = NewVault(TempFile());
+        ExpectThrows<InvalidOperationException>(() => shut.Export(Good), "a shut vault cannot export");
+    }
+
+    private static void MatchOldPassword()
+    {
+        var v = NewVault(TempFile());
+        v.Open();
+        var alice = v.Add("https://example.com", "alice", "old-pass");
+        var bob = v.Add("https://example.com", "bob", "old-pass");
+        v.Add("https://example.com", "carol", "other-pass");
+        v.Add("https://other.example", "alice", "old-pass");
+
+        Expect(v.MatchOld("https://example.com/account", "alice", "old-pass").SequenceEqual(new[] { alice }), "a user name narrows it to one");
+        Expect(v.MatchOld("https://example.com", "", "old-pass").ToHashSet().SetEquals(new[] { alice, bob }), "no user name: every entry with that password");
+        Expect(v.MatchOld("https://example.com", "dave", "old-pass").Count == 0, "no such user");
+        Expect(v.MatchOld("https://example.com", "alice", "wrong").Count == 0, "no such password");
+        Expect(v.MatchOld("http://example.com", "alice", "old-pass").Count == 0, "another origin");
+        Expect(v.MatchOld("not an address", "alice", "old-pass").Count == 0, "not an address");
+        Expect(v.MatchOld("https://example.com", "", "Old-pass").Count == 0, "case matters");
+
+        ExpectThrows<InvalidOperationException>(() => NewVault(TempFile()).MatchOld("https://example.com", "", "x"), "a shut vault");
+    }
+
+    private static void CaptureOld()
+    {
+        var capture = new Capture();
+        var tab = new object();
+
+        Expect(capture.Hold(tab, "https://example.com", "alice", "new-pass", "old-pass"), "held with the old password");
+        Expect(capture.Take(tab)!.Old == "old-pass", "the old password comes back with the held login");
+
+        capture.Hold(tab, "https://example.com", "alice", "new-pass");
+        Expect(capture.Take(tab)!.Old is null, "an ordinary login has none");
+
+        capture.Hold(tab, "https://example.com", "alice", "same", "same");
+        Expect(capture.Take(tab)!.Old is null, "an old password equal to the new one is not a change");
+
+        capture.Hold(tab, "https://example.com", "alice", "new-pass", "");
+        Expect(capture.Take(tab)!.Old is null, "an empty old password is not one");
+
+        capture.Hold(tab, "https://example.com", "alice", "new-pass", new string('x', Capture.MaxLength + 1));
+        Expect(capture.Take(tab)!.Old is null, "an old password that long is dropped, the login is still held");
+    }
+
+    private static void NeverRemove()
+    {
+        var list = new List<string> { "https://a.example", "https://b.example" };
+        Expect(Never.Remove(list, "https://a.example") && list.SequenceEqual(new[] { "https://b.example" }), "removed");
+        Expect(!Never.Remove(list, "https://a.example"), "not there any more");
+        Expect(!Never.Remove(list, "https://B.example"), "an origin is matched exactly");
     }
 
     private sealed class FakeHello : IHello

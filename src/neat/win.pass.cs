@@ -137,8 +137,11 @@ public sealed partial class Win
             case "offer":
                 var user = JsonText(root, "u");
                 var pass = JsonText(root, "p");
+
+                // Set only by a change-password form: the password the person had before.
+                var old = JsonText(root, "o");
                 if (user is not null && pass is not null)
-                    _capture.Hold(tab, origin, user, pass);
+                    _capture.Hold(tab, origin, user, pass, old);
 
                 break;
 
@@ -232,6 +235,24 @@ public sealed partial class Win
                 AskUnlock();
 
             return;
+        }
+
+        // A change-password form: the new password replaces the one saved entry that had the old one.
+        // The page rarely shows the user name there, so the entry's own is kept. If several entries had
+        // that password, or none, it is treated as an ordinary login below.
+        if (held.Old is not null)
+        {
+            var targets = vault.MatchOld(held.Site, held.User, held.Old);
+            if (targets.Count == 1)
+            {
+                var entry = vault.Find(held.Site).FirstOrDefault(l => l.Id == targets[0]);
+                var named = held with { User = held.User.Length > 0 ? held.User : entry?.User ?? string.Empty };
+
+                if (!vault.Lookup(named.Site, named.User, named.Password).SamePassword)
+                    AskSave(named, targets[0]);
+
+                return;
+            }
         }
 
         var match = vault.Lookup(held.Site, held.User, held.Password);
