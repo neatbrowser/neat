@@ -274,6 +274,24 @@
                             Toggled="blkon_Toggled"/>
                     </Grid>
 
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="Fingerprint protection" VerticalAlignment="Center"/>
+                        <ComboBox
+                            x:Name="blkfp"
+                            Grid.Column="1"
+                            MinWidth="112"
+                            SelectionChanged="blkfp_Changed">
+                            <ComboBoxItem Content="Off"/>
+                            <ComboBoxItem Content="Standard"/>
+                            <ComboBoxItem Content="Strict"/>
+                        </ComboBox>
+                    </Grid>
+                    <TextBlock x:Name="blkfpinfo" FontSize="11" Opacity="0.55" TextWrapping="Wrap"/>
+
                     <TextBlock x:Name="blkinfo" FontSize="11" Opacity="0.55" TextWrapping="Wrap"/>
                 </StackPanel>
             </Border>

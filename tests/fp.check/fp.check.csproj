@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The self-check of the fingerprint protection's plain-code pieces (src/neat/fp): which level a
+       site gets, how settings are cleaned, what the page script is filled in with, the header
+       values. These files use nothing of WinUI, so it runs on any machine with .NET 8. The page
+       script itself is checked in a real Chromium by farble.check.mjs (Node + Playwright).
+       Run from this folder: dotnet run -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <AssemblyName>fp.check</AssemblyName>
+    <RootNamespace>fpcheck</RootNamespace>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseAppHost>false</UseAppHost>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="..\..\src\neat\ads\adurl.cs" LinkBase="ads" />
+    <Compile Include="..\..\src\neat\fp\fpprefs.cs" LinkBase="fp" />
+    <Compile Include="..\..\src\neat\fp\fp.cs" LinkBase="fp" />
+  </ItemGroup>
+
+</Project>

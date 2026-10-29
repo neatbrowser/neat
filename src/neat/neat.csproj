@@ -74,6 +74,9 @@
     <!-- The script the blocker gives every page (ads/pagejs.cs fills it in). Embedded, so it
          cannot go missing next to neat.exe. -->
     <EmbeddedResource Include="ads\page.js" LogicalName="neat.ads.page.js" />
+
+    <!-- The script of the fingerprint protection (fp/fp.cs fills it in). Embedded for the same reason. -->
+    <EmbeddedResource Include="fp\farble.js" LogicalName="neat.fp.farble.js" />
   </ItemGroup>
 
   <!-- The ad blocker's two downloads, put in ads-dl\ by tools\fetch-ads.ps1 (CI runs it before

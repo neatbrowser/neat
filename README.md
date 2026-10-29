@@ -99,8 +99,12 @@ src/neat/
   ads/requestlog.cs  optional one-line-per-request log (ads-requests.tsv), for finding out why a host got through
   ads/adurl.cs, dataurl.cs, reqtype.cs, tabads.cs   small helpers: addresses, data: URLs, request types, per-tab state
   win.ads.cs        the window's side of the blocker: WebResourceRequested, popups, page scripts
+  fp/farble.js      the fingerprint protection's page script: canvas, audio, navigator, screen, devices, WebGL
+  fp/fp.cs, fpprefs.cs  which level a site gets, what the script is filled in with, the header values, the settings
+  win.fp.cs         the window's side: registers the script in every tab (again when settings change), Sec-GPC and Accept-Language
 tools/fetch-ads.ps1 downloads neat_adblock.dll and the filter lists into ads-dl\ (CI runs it before the build)
 tests/ads.check/    the blocker's self-checks: C# pieces (dotnet run) and the page script (node page.check.mjs)
+tests/fp.check/     the fingerprint protection's self-checks: C# pieces (dotnet run) and the page script in a real Chromium (node farble.check.mjs, needs Playwright)
 tests/vault.check/  the vault's self-check (plain asserts, no packages), run by CI before the build
 tests/capture.check/ the page scripts' self-check: made-up login forms in jsdom (needs Node; npm ci, npm test)
 ```
@@ -139,6 +143,45 @@ Settings (`settings.json`, browser closed):
 `"Ads": { "On": true, "Off": ["example.com"], "Update": true, "UpdateHours": 6, "UpdateRepo": "https://github.com/neatbrowser/neat-filters" }`.
 `On: false` switches the blocker off; `Off` lists hosts where it does nothing; `Update: false` keeps
 the lists that are there; `UpdateHours` is how often to look (1 to 168).
+
+## Fingerprint protection
+
+Sites can recognise a device without cookies, by reading small details: how a canvas is drawn, how
+the audio engine rounds, the number of cores, the screen, the graphics card's name. NEAT does what
+Brave calls "farbling": it changes what the page reads by a little, so that
+
+- on one site the values stay the same (pages keep working),
+- on another site they are different, and they are different again after NEAT is restarted
+  (two sites cannot match their visitor by them).
+
+The numbers come from a secret made at each start and the site's registrable domain; a frame uses
+the top page's domain. The script (`fp/farble.js`) is registered in every tab and runs before the
+page's own scripts, in the page and in each frame.
+
+| | Standard (default) | Strict |
+|---|---|---|
+| Canvas (`getImageData`, `toDataURL`, `toBlob`, `convertToBlob`, WebGL `readPixels`) | up to 512 lowest bits flipped, from a copy | same |
+| Audio (`getChannelData`, `copyFromChannel`, analyser reads) | values times 0.999 to 1 | seeded noise |
+| `hardwareConcurrency`, `deviceMemory` | between 4 and the real value | between 4 and 8 / any size |
+| `navigator.languages` (and the Accept-Language header) | the first language only | `en-US, en` |
+| Screen and window sizes, window position, pointer position on screen | the smallest common screen size the window fits in; position near 0 | same |
+| Camera, microphone and speaker list | shuffled after the first | same |
+| WebGL graphics card name | `NEAT` | random text |
+| `Sec-GPC: 1` and `navigator.globalPrivacyControl` | on protected pages | same |
+
+Chosen per site from the NEAT Blocker panel (the page reloads); the default is in Settings > General >
+Privacy. A site in the list also covers its subdomains. WebRTC is told to use only the route normal
+traffic takes (a VPN is not bypassed; takes effect after a restart).
+
+What a page script cannot do, and Brave does inside its engine: it does not reach into Web Workers (a
+fingerprinter that runs in a worker sees real values), a determined fingerprinter can find out that
+functions were replaced, and fonts, CSS media queries and network fingerprints (TLS, HTTP/2) are not
+touched. Plugins are left alone on purpose: modern Chromium reports the same five PDF viewers to
+everyone, so changing them would make a visitor more recognisable, not less.
+
+Settings (`settings.json`, browser closed):
+`"Fp": { "On": true, "Default": 1, "Sites": { "example.com": 0 }, "Gpc": true, "WebRtc": true }`,
+levels 0 off, 1 standard, 2 strict.
 
 ## Where data is saved
 

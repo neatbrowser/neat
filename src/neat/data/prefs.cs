@@ -98,6 +98,9 @@ public sealed class Prefs
 
     /// <summary>The ad blocker's settings (ads/ads.cs).</summary>
     public AdPrefs Ads { get; set; } = new();
+
+    /// <summary>The fingerprint protection's settings (fp/fpprefs.cs).</summary>
+    public FpPrefs Fp { get; set; } = new();
 }
 
 /// <summary>Settings of the ad blocker.</summary>

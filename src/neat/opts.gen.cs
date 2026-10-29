@@ -50,6 +50,37 @@ public sealed partial class Opts
         home.Checked += (s, e) => SetStart(StartMode.Home);
         last.Checked += (s, e) => SetStart(StartMode.Last);
 
+        // Privacy. Each control is set before its handler is added, so building the page saves nothing.
+        var fp = App.Cfg.Cur.Fp;
+        var level = new ComboBox { Width = 160 };
+        foreach (var n in new[] { "Off", "Standard", "Strict" })
+            level.Items.Add(n);
+        level.SelectedIndex = FpLevel.Clamp(fp.Default);
+        level.SelectionChanged += (s, e) =>
+        {
+            if (level.SelectedIndex < 0 || level.SelectedIndex == App.Cfg.Cur.Fp.Default)
+                return;
+
+            App.Cfg.Cur.Fp.Default = level.SelectedIndex;
+            App.Cfg.Save();
+            Fp.RaiseChanged();
+        };
+
+        var gpc = new ToggleSwitch { IsOn = fp.Gpc, OnContent = string.Empty, OffContent = string.Empty, MinWidth = 0 };
+        gpc.Toggled += (s, e) =>
+        {
+            App.Cfg.Cur.Fp.Gpc = gpc.IsOn;
+            App.Cfg.Save();
+            Fp.RaiseChanged();
+        };
+
+        var rtc = new ToggleSwitch { IsOn = fp.WebRtc, OnContent = string.Empty, OffContent = string.Empty, MinWidth = 0 };
+        rtc.Toggled += (s, e) =>
+        {
+            App.Cfg.Cur.Fp.WebRtc = rtc.IsOn;
+            App.Cfg.Save();
+        };
+
         return Block.Page(
             Block.Head(_skin, "On startup"),
             Block.Card(_skin, home, last),
@@ -58,7 +89,18 @@ public sealed partial class Opts
                 Block.Row(_skin, "Home page", "Opens at startup when \"Open the home page\" is chosen above, and with Alt+Home.", _home)),
             Block.Head(_skin, "Search"),
             Block.Card(_skin,
-                Block.Row(_skin, "Search engine", "Used for anything typed in the address bar that is not a web address.", box)));
+                Block.Row(_skin, "Search engine", "Used for anything typed in the address bar that is not a web address.", box)),
+            Block.Head(_skin, "Privacy"),
+            Block.Card(_skin,
+                Block.Row(_skin, "Fingerprint protection",
+                    "Sites can recognise a device by small details (how it draws, plays sound, its screen). This changes what they read, differently on each site and each time NEAT starts. Standard keeps pages working; Strict goes further and may break some. It can be set for each site from the NEAT Blocker panel.",
+                    level),
+                Block.Row(_skin, "Do not sell or share my data",
+                    "Sends the Global Privacy Control signal to sites on pages that are protected.",
+                    gpc),
+                Block.Row(_skin, "Keep WebRTC from showing my network addresses",
+                    "Calls in the browser then only use the route normal traffic takes, so a VPN is not bypassed. Takes effect after NEAT is restarted.",
+                    rtc)));
     }
 
     private static void SetStart(StartMode mode)

@@ -30,6 +30,20 @@ internal static class Env
 
     public static bool UsesFixed => Fixed is not null;
 
+    /// <summary>
+    /// Adds arguments for the browser engine behind every web view (WebView2 reads them from this
+    /// environment variable). Call before the first web view exists.
+    /// </summary>
+    public static void AddBrowserArguments(string args)
+    {
+        if (string.IsNullOrWhiteSpace(args))
+            return;
+
+        const string name = "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS";
+        var now = Environment.GetEnvironmentVariable(name);
+        Environment.SetEnvironmentVariable(name, string.IsNullOrWhiteSpace(now) ? args : now + " " + args);
+    }
+
     public static void Configure()
     {
         var dir = Path.Combine(AppContext.BaseDirectory, "WebView2");

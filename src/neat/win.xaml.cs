@@ -39,6 +39,7 @@ public sealed partial class Win : Window
         RoundInit();
         LibInit();
         BlkInit();
+        FpInit();
 
         // The first tab opens once the window is up.
         root.Loaded += OnLoaded;
@@ -92,6 +93,7 @@ public sealed partial class Win : Window
         _closed = true;
         bar.LayoutUpdated -= BarLayout;
         BlkStop();
+        FpStop();
 
         if (AppWindow.Presenter is not OverlappedPresenter p)
             return;
@@ -158,6 +160,7 @@ public sealed partial class Win : Window
         Hook(tab, core);
         HookPass(tab, core);
         AdsHook(tab, core);
+        await FpHook(tab, core);
 
         // Must be in place before the first page loads. Without it only the
         // shortcuts for the window's own controls work, so a failure here

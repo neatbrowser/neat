@@ -110,6 +110,26 @@ public sealed partial class Win
             _blkSync = false;
         }
 
+        var fp = App.Cfg.Cur.Fp;
+        var level = Fp.LevelFor(fp, host);
+        _blkSync = true;
+        try
+        {
+            blkfp.IsEnabled = fp.On && host is not null;
+            if (blkfp.SelectedIndex != level)
+                blkfp.SelectedIndex = level;
+        }
+        finally
+        {
+            _blkSync = false;
+        }
+
+        BlkText(blkfpinfo, !fp.On ? "Fingerprint protection is switched off in settings."
+            : host is null ? string.Empty
+            : level == FpLevel.Off ? "Sites can read your device's details as they are."
+            : level == FpLevel.Standard ? "Values fingerprinting scripts read are changed a little, differently on each site."
+            : "Stronger changes; a few pages may not work.");
+
         string info;
         if (!ads.On)
             info = "The blocker is switched off in settings.";
@@ -137,6 +157,37 @@ public sealed partial class Win
             e.Handled = true;
             BlkShow(false);
         }
+    }
+
+    /// <summary>The fingerprint level for this site. The page scripts are registered again, then the page loads again so it takes effect.</summary>
+    private async void blkfp_Changed(object sender, Microsoft.UI.Xaml.Controls.SelectionChangedEventArgs e)
+    {
+        if (_blkSync)
+            return;
+
+        var host = BlkHost();
+        var level = blkfp.SelectedIndex;
+        if (host is null || level < 0)
+            return;
+
+        Fp.SetLevel(App.Cfg.Cur.Fp, host, level);
+        App.Cfg.Save();
+        Log.Write("fp", $"{FpLevel.Name(level)} for {host}");
+
+        BlkRefresh();
+        try
+        {
+            // Every window registers its scripts again (this one's work is waited for), then the page reloads.
+            Fp.RaiseChanged();
+            await _fpBusy;
+        }
+        catch (Exception ex)
+        {
+            Log.Error("fp", ex, "could not apply the level");
+        }
+
+        if (!_closed)
+            _cur?.View.CoreWebView2?.Reload();
     }
 
     /// <summary>The switch: the blocker on or off for this site, then the page loads again so it takes effect.</summary>

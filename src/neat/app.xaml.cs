@@ -50,6 +50,9 @@ public partial class App : Application
     {
         Cfg = new Store(Path.Combine(Env.Root, "settings.json"));
         Cfg.Load();
+
+        // Browser arguments that come from settings, in place before the first web view is created.
+        Env.AddBrowserArguments(Fp.BrowserArguments(Cfg.Cur.Fp));
         Sess = new Session(Path.Combine(Env.Root, "session.json"));
         Find = new Search(Cfg);
         Look = new Look(Cfg);
