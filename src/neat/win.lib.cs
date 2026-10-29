@@ -46,12 +46,8 @@ public sealed partial class Win
         App.Dl.ActiveChanged += Dot;
         Dot();
 
-        // A bookmark or history entry went: the star in the address bar and the footer counters depend on them.
-        lib.Edited += () =>
-        {
-            _ = Star();
-            _ = Stats();
-        };
+        // A bookmark or history entry went: the star in the address bar depends on them.
+        lib.Edited += () => _ = Star();
 
         // The panel waits outside the left edge. This is set before the animations are switched
         // on, so the window does not play a slide at startup.

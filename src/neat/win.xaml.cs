@@ -14,7 +14,6 @@ public sealed partial class Win : Window
 {
     private readonly ObservableCollection<Tab> _tabs = new();
     private Tab? _cur;
-    private string _ver = string.Empty;
 
     public Win()
     {
@@ -63,11 +62,8 @@ public sealed partial class Win : Window
             var ver = core.Environment.BrowserVersionString;
             WebVer = ver;   // for the settings window's About page (win.opts.cs)
             var src = Env.UsesFixed ? "bundled runtime" : "system runtime";
-            _ver = $"WebView2 {ver} ({src})";
-            Log.Write("webview", _ver);
+            Log.Write("webview", $"WebView2 {ver} ({src})");
         }
-
-        await Stats();
     }
 
     /// <summary>Remembers the window size (and whether it was maximized) for next time.</summary>
@@ -230,7 +226,6 @@ public sealed partial class Win : Window
                 return;
 
             await Log.Timed("history.add", () => App.Hist.Add(url, core.DocumentTitle, tab.IconSrc));
-            await Stats();
         };
 
         core.FaviconChanged += (s, e) => tab.SetIcon(core.FaviconUri);
@@ -382,7 +377,7 @@ public sealed partial class Win : Window
         }
         catch (Exception)
         {
-            // Treated as "not bookmarked"; Stats() reports database problems.
+            // Treated as "not bookmarked".
         }
 
         // The user may have switched tabs while the lookup ran.
@@ -411,29 +406,10 @@ public sealed partial class Win : Window
         }
         catch (Exception ex)
         {
-            info.Text = _ver + "\nbookmark failed: " + ex.Message;
+            Log.Error("bookmarks", ex, "toggle bookmark failed");
             return;
         }
 
         await Star();
-        await Stats();
-    }
-
-    /// <summary>
-    /// Temporary footer line so the new data layer can be seen working: how
-    /// many pages are in history and how many are bookmarked.
-    /// </summary>
-    private async Task Stats()
-    {
-        try
-        {
-            var h = await Log.TimedValue("history.count", () => App.Hist.Count());
-            var m = await Log.TimedValue("bookmarks.count", () => App.Marks.Count());
-            info.Text = $"{_ver}\nhistory {h}  |  bookmarks {m}";
-        }
-        catch (Exception ex)
-        {
-            info.Text = _ver + "\ndata error: " + ex.Message;
-        }
     }
 }

@@ -488,14 +488,6 @@
                             </Grid>
                         </Button>
 
-                        <TextBlock
-                            x:Name="info"
-                            Grid.Column="1"
-                            VerticalAlignment="Bottom"
-                            FontSize="11"
-                            Opacity="0.6"
-                            TextWrapping="Wrap"/>
-
                         <!-- Window colour: light or dark, brightness, gradient, and ready-made hues. -->
                         <Button
                             x:Name="paint"
