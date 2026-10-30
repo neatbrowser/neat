@@ -26,6 +26,9 @@ const SOURCE = extract('Source');
 const HAS_PASSWORD = extract('HasPassword');
 const TOKEN = 'tok123';
 
+// The script as a page gets it: the token and the site rules (an object, as in pass/rules.json) filled in.
+const src = rules => SOURCE.replace('__TOKEN__', TOKEN).replace('__RULES__', JSON.stringify(rules || {}));
+
 let ran = 0;
 let failed = 0;
 
@@ -78,7 +81,7 @@ function load(html, opts = {}) {
   win.clearInterval = id => { if (timers[id]) timers[id].on = false; };
 
   const state = trustSwitch(win);
-  if (opts.run !== false) win.eval(SOURCE.replace('__TOKEN__', TOKEN));
+  if (opts.run !== false) win.eval(src(opts.rules));
 
   const $ = s => win.document.querySelector(s);
   return {
@@ -97,7 +100,7 @@ function load(html, opts = {}) {
     key: (el, key) => {
       state.real = true;
       try {
-        (typeof el === 'string' ? $(el) : el).dispatchEvent(new win.KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
+        (typeof el === 'string' ? $(el) : el).dispatchEvent(new win.KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, composed: true }));
       } finally { state.real = false; }
     },
     // The same action made by the page's own script.
@@ -449,7 +452,7 @@ check('a frame inside a page reports nothing, even for a real click', () => {
   frame.document.body.innerHTML = LOGIN;
   frame.chrome = { webview: { postMessage: m => p.posts.push(m) } };
   const state = trustSwitch(frame);
-  frame.eval(SOURCE.replace('__TOKEN__', TOKEN));
+  frame.eval(src());
   expect(frame.top !== frame, '(sanity) the frame knows it is not the top page');
   frame.document.querySelector('#u').value = 'alice';
   frame.document.querySelector('#p').value = 'secret';
@@ -465,7 +468,7 @@ check('a frame inside a page reports nothing, even for a real click', () => {
 
 check('a page without the WebView2 bridge does nothing and does not fail', () => {
   const dom = new JSDOM(LOGIN, { runScripts: 'outside-only', url: 'https://example.com/', virtualConsole: new VirtualConsole() });
-  dom.window.eval(SOURCE.replace('__TOKEN__', TOKEN));
+  dom.window.eval(src());
 });
 
 check('the script keeps no globals the page can find', () => {
@@ -493,6 +496,247 @@ check('HasPassword: true with a visible password field, false without or with hi
   expect(run('<input type="password" style="display:none">') === false, 'display none');
   expect(run('<div hidden><input type="password"></div>') === false, 'hidden parent');
   expect(run('<input type="text"><input type="PASSWORD">') === true, 'type written in capitals');
+});
+
+// ---- shadow roots (web components) ----
+
+// A page whose only content is a host with an open shadow root holding `inner`.
+function shadowPage(inner, opts) {
+  const p = load('<div id="host"></div>', opts);
+  const root = p.$('#host').attachShadow({ mode: 'open' });
+  root.innerHTML = inner;
+  p.s = sel => root.querySelector(sel);
+  return p;
+}
+
+const SHADOW_LOGIN = `<form id="f" onsubmit="return false"><input id="u" type="text" name="user">
+  <input id="p" type="password"><button id="go" type="submit">Sign in</button></form>`;
+
+check('a login inside a shadow root is reported, and so is the form going away', () => {
+  const p = shadowPage(SHADOW_LOGIN);
+  p.s('#u').value = 'alice'; p.s('#p').value = 'hunter2';
+  p.click(p.s('#go'));
+  const o = p.got().find(x => x.t === 'offer');
+  expect(o && o.u === 'alice' && o.p === 'hunter2', 'got ' + JSON.stringify(p.got()));
+  expect(p.live() === 1, 'not watching the field');
+  p.s('#f').remove(); p.tick();
+  expect(p.got().some(x => x.t === 'gone'), 'a form removed from a shadow root was not reported');
+});
+
+check('Enter in a field inside a shadow root is reported (the key event crosses the boundary)', () => {
+  const p = shadowPage(SHADOW_LOGIN);
+  p.s('#u').value = 'alice'; p.s('#p').value = 'secret';
+  p.key(p.s('#p'), 'Enter');
+  expect(p.got().some(x => x.t === 'offer' && x.p === 'secret'), 'not reported: ' + JSON.stringify(p.got()));
+});
+
+check('a password field in a component inside an ordinary form is found, with the user name before it', () => {
+  const p = load(`<form onsubmit="return false"><input id="u" type="text" name="user"><div id="h"></div><button id="go">Go</button></form>`);
+  p.$('#h').attachShadow({ mode: 'open' }).innerHTML = '<input id="p" type="password">';
+  p.$('#u').value = 'alice'; p.$('#h').shadowRoot.querySelector('#p').value = 'pw1234';
+  p.click('#go');
+  const o = p.got().find(x => x.t === 'offer');
+  expect(o && o.u === 'alice' && o.p === 'pw1234', 'got ' + JSON.stringify(p.got()));
+});
+
+check('a shadow host that is hidden hides what is inside it', () => {
+  const p = shadowPage(SHADOW_LOGIN);
+  p.s('#u').value = 'alice'; p.s('#p').value = 'secret';
+  p.$('#host').style.display = 'none';
+  p.click(p.s('#go'));
+  expect(p.got().length === 0, 'a field inside a hidden host was reported');
+});
+
+// ---- what counts as a password field ----
+
+check('a password the page shows as text is still the password, and is never the user name', () => {
+  const p = load(`<form onsubmit="return false"><input id="u" type="text" name="user">
+    <input id="p" type="password" name="password"><button id="eye" type="button">Show</button><button id="go">Sign in</button></form>`);
+  p.set('#u', 'alice'); p.set('#p', 'hunter2');
+  p.$('#p').type = 'text';
+  p.click('#go');
+  const o = p.got().find(x => x.t === 'offer');
+  expect(o && o.u === 'alice' && o.p === 'hunter2', 'got ' + JSON.stringify(p.got()));
+
+  const q = load(`<form onsubmit="return false"><input id="p" type="text" autocomplete="current-password" value="abc"><button id="go">Go</button></form>`);
+  q.click('#go');
+  expect(q.got().some(x => x.t === 'offer' && x.p === 'abc' && x.u === ''), 'a text field marked current-password: ' + JSON.stringify(q.got()));
+
+  const plain = load(`<form onsubmit="return false"><input type="text" name="nickname" value="abc"><button id="go">Go</button></form>`);
+  plain.click('#go');
+  expect(plain.got().length === 0, 'an ordinary text field was taken for a password');
+});
+
+check('a text field drawn masked (-webkit-text-security) is a password field', () => {
+  // jsdom does not know that property, so it is made up for the elements marked data-mask.
+  const q = load(`<form onsubmit="return false"><input id="u" type="text" name="user">
+    <input id="p" type="text" name="secretbox" data-mask="1"><button id="go">Go</button></form>`, { run: false });
+  const real = q.win.getComputedStyle.bind(q.win);
+  q.win.getComputedStyle = el => new Proxy(real(el), {
+    get(t, k) {
+      if (k === 'webkitTextSecurity') return el.dataset && el.dataset.mask ? 'disc' : 'none';
+      const v = Reflect.get(t, k, t);
+      return typeof v === 'function' ? v.bind(t) : v;
+    },
+  });
+  q.win.eval(src());
+  q.set('#u', 'alice'); q.set('#p', 'hunter2'); q.click('#go');
+  const o = q.got().find(x => x.t === 'offer');
+  expect(o && o.u === 'alice' && o.p === 'hunter2', 'got ' + JSON.stringify(q.got()));
+});
+
+// ---- buttons that are not a sign-in ----
+
+check('Cancel, Close, Back and the eye that shows the password are not a sign-in', () => {
+  const p = load(`<form onsubmit="return false"><input id="u" type="text" name="user"><input id="p" type="password">
+    <button id="c1" type="button">Cancel</button><button id="c2" type="button" aria-label="Close dialog"><svg></svg></button>
+    <button id="c3" type="button">Back</button><button id="c4" type="button">Hủy</button>
+    <button id="c5" type="button" aria-label="Show password"></button><button id="c6" type="button" title="Hide password"></button>
+    <input id="c7" type="button" value="Cancel"><button id="go">Sign in</button></form>`);
+  p.set('#u', 'alice'); p.set('#p', 'secret');
+  for (const id of ['#c1', '#c2', '#c3', '#c4', '#c5', '#c6', '#c7']) p.click(id);
+  expect(p.got().length === 0, 'reported for a button that is not a sign-in: ' + JSON.stringify(p.got()));
+  expect(p.live() === 0, 'it started watching the form');
+  p.click('#go');
+  expect(p.got().some(x => x.t === 'offer'), 'Sign in was no longer reported');
+});
+
+check('a long label is not mistaken for a Cancel button, and Sign in with a close-looking word still counts', () => {
+  const p = load(`<form onsubmit="return false"><input id="p" type="password">
+    <button id="go">Sign in to see your account and close the loop on your open orders</button></form>`);
+  p.set('#p', 'secret'); p.click('#go');
+  expect(p.got().some(x => x.t === 'offer'), 'a long label was taken for Cancel');
+});
+
+// ---- controls that are not buttons ----
+
+check('a styled div that is clicked like a button counts when a filled password is on show', () => {
+  const p = load(`<form id="f"><input id="u" type="text" name="user"><input id="p" type="password">
+    <div id="d" style="cursor:pointer"><span id="sp">Sign in</span></div></form>`);
+  p.set('#u', 'alice'); p.set('#p', 'secret');
+  p.click('#sp');
+  const o = p.got().find(x => x.t === 'offer');
+  expect(o && o.u === 'alice' && o.p === 'secret', 'got ' + JSON.stringify(p.got()));
+
+  const plain = load(`<form id="f"><input id="u" type="text" name="user"><input id="p" type="password">
+    <div id="d"><span id="sp">Sign in</span></div></form>`);
+  plain.set('#p', 'secret'); plain.click('#sp');
+  expect(plain.got().length === 0, 'a div that does not look clickable was taken for a button');
+});
+
+check('a clickable div never starts the guess about a first step, a link is never a button', () => {
+  const p = load(`<form><input type="email" value="a@b.c"><div id="d" style="cursor:pointer">Join</div></form>`);
+  p.click('#d');
+  expect(p.got().length === 0, 'a div on a page with no password reported a user name');
+
+  const a = load(`<form><input id="p" type="password"><a id="l" href="#x" style="cursor:pointer"><span id="s">Forgot</span></a></form>`);
+  a.set('#p', 'secret'); a.click('#s');
+  expect(a.got().length === 0, 'a link with a pointer cursor was taken for a button');
+
+  const c = load(`<form><input id="p" type="password"><div id="d" style="cursor:pointer">Close</div></form>`);
+  c.set('#p', 'secret'); c.click('#d');
+  expect(c.got().length === 0, 'a Close div was taken for a sign-in');
+});
+
+// ---- what a first-step field says about itself ----
+
+check('a first-step user name is also recognised by what the field says (aria-label, placeholder)', () => {
+  const report = field => {
+    const p = load(`<form onsubmit="return false">${field}<button id="go">Next</button></form>`);
+    p.click('#go');
+    return p.got();
+  };
+  expect(report('<input type="text" placeholder="Email or phone number" value="alice">').length === 1, 'placeholder');
+  expect(report('<input type="text" aria-label="Tên đăng nhập" value="alice">').length === 1, 'aria-label in Vietnamese');
+  expect(report('<input type="text" placeholder="Search accounts" value="cats">').length === 0, 'a search placeholder');
+  expect(report('<input type="text" aria-label="Tìm kiếm tài khoản" value="cats">').length === 0, 'a search label in Vietnamese');
+  expect(report('<input type="text" placeholder="Your comment" value="nice">').length === 0, 'a comment placeholder');
+});
+
+// ---- rules for single sites ----
+
+const PLAIN_PAGE = `<div id="widget"><input type="text" name="user" value="alice"><input type="password" value="secret"></div><button id="go">Go</button>`;
+
+check('a rule can leave a part of the page out', () => {
+  const free = load(PLAIN_PAGE);
+  free.click('#go');
+  expect(free.got().some(x => x.t === 'offer'), '(sanity) without a rule it is reported');
+  const ruled = load(PLAIN_PAGE, { rules: { 'example.com': { exclude: ['#widget'] } } });
+  ruled.click('#go');
+  expect(ruled.got().length === 0, 'an excluded part was reported: ' + JSON.stringify(ruled.got()));
+});
+
+check('a rule can name the fields the guess cannot find, a hidden user name included', () => {
+  const html = `<form onsubmit="return false"><input type="hidden" name="login" value="bob@x.com">
+    <input id="pw" type="text" name="zz" value="s3cret"><button id="go">Next</button></form>`;
+  const plain = load(html);
+  plain.click('#go');
+  expect(plain.got().length === 0, '(sanity) the guess finds nothing here');
+  const rules = { 'example.com': { login: [{ user: 'input[name="login"]', pass: '#pw' }] } };
+  const p = load(html, { rules });
+  p.click('#go');
+  const o = p.got().find(x => x.t === 'offer');
+  expect(o && o.u === 'bob@x.com' && o.p === 's3cret', 'got ' + JSON.stringify(p.got()));
+  expect(p.live() === 1, 'not watching the field');
+});
+
+check('a rule path goes down through shadow roots, one selector at a time', () => {
+  const rules = { 'example.com': { login: [{ user: ['#h', 'input[name="u"]'], pass: ['#h', 'input[name="zz"]'] }] } };
+  const p = load('<div id="h"></div><button id="go">Go</button>', { rules });
+  p.$('#h').attachShadow({ mode: 'open' }).innerHTML = '<input name="u" value="carol"><input name="zz" value="pw9">';
+  p.click('#go');
+  const o = p.got().find(x => x.t === 'offer');
+  expect(o && o.u === 'carol' && o.p === 'pw9', 'got ' + JSON.stringify(p.got()));
+});
+
+check('a rule applies to its host and subdomains, to its path, and to nothing else', () => {
+  const html = `<input type="text" name="u" value="dan"><input id="pw" type="text" name="zz" value="pw9"><button id="go">Go</button>`;
+  const rule = key => ({ [key]: { login: [{ user: 'input[name="u"]', pass: '#pw' }] } });
+  const hit = (url, key) => { const p = load(html, { url, rules: rule(key) }); p.click('#go'); return p.got().some(x => x.t === 'offer'); };
+  expect(hit('https://example.com/', 'example.com'), 'the host itself');
+  expect(hit('https://www.example.com/', 'example.com'), 'a subdomain');
+  expect(!hit('https://notexample.com/', 'example.com'), 'a host that only ends the same');
+  expect(!hit('https://example.org/', 'example.com'), 'another host');
+  expect(hit('https://example.com/login/step', 'example.com/login'), 'a path prefix');
+  expect(!hit('https://example.com/other', 'example.com/login'), 'another path');
+});
+
+check('a rule whose field is empty or missing falls back to the guess, and broken rules do no harm', () => {
+  const p = load(LOGIN, { rules: { 'example.com': { login: [{ user: '#u', pass: '#nothere' }, null, 'x', { pass: 5 }, { pass: ['[['] }], exclude: ['[[', 5] } } });
+  p.set('#u', 'alice'); p.set('#p', 'secret'); p.click('#go');
+  const o = p.got().find(x => x.t === 'offer');
+  expect(o && o.u === 'alice' && o.p === 'secret', 'got ' + JSON.stringify(p.got()));
+
+  const empty = load(LOGIN, { rules: { 'example.com': { login: [{ user: '#u', pass: '#p' }] } } });
+  empty.set('#u', 'alice'); empty.click('#go');
+  expect(empty.got().length === 0, 'an empty password named by a rule was reported');
+
+  const junk = load(LOGIN, { rules: { 'example.com': 7, 'bad': null } });
+  junk.set('#p', 'secret'); junk.click('#go');
+  expect(junk.got().some(x => x.t === 'offer'), 'junk rules stopped the guess');
+});
+
+check('a rule cannot be changed by the page: the script keeps no globals even with rules', () => {
+  const rules = { 'example.com': { exclude: ['#x'] } };
+  const before = new Set(Object.getOwnPropertyNames(load(LOGIN, { run: false }).win));
+  const added = Object.getOwnPropertyNames(load(LOGIN, { rules }).win).filter(n => !before.has(n));
+  expect(added.length === 0, 'added globals: ' + added.join(', '));
+  expect(SOURCE.includes('__RULES__'), 'the rules are not a placeholder in the source');
+});
+
+// ---- HasPassword, as the page script now sees fields ----
+
+check('HasPassword: a password field in a shadow root, or shown as text, still counts', () => {
+  const run = (html, after) => {
+    const dom = new JSDOM(html, { runScripts: 'outside-only', virtualConsole: new VirtualConsole() });
+    if (after) after(dom.window.document);
+    return dom.window.eval(HAS_PASSWORD);
+  };
+  expect(run('<div id="h"></div>', d => { d.querySelector('#h').attachShadow({ mode: 'open' }).innerHTML = '<input type="password">'; }) === true, 'inside a shadow root');
+  expect(run('<div id="h" style="display:none"></div>', d => { d.querySelector('#h').attachShadow({ mode: 'open' }).innerHTML = '<input type="password">'; }) === false, 'inside a hidden host');
+  expect(run('<input type="text" autocomplete="current-password">') === true, 'shown as text, marked current-password');
+  expect(run('<input type="text" name="password">') === true, 'shown as text, named password');
+  expect(run('<input type="text" name="nickname">') === false, 'an ordinary text field');
 });
 
 console.log('\n' + (ran - failed) + ' of ' + ran + ' checks passed.');

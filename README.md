@@ -75,6 +75,8 @@ src/neat/
   vault/capture.cs  a login a page just showed, held until it is known whether the login worked
   vault/never.cs    the sites the person said never to offer to save a password for (kept in settings.json)
   pass/capture.cs   the two page scripts of the save-password bubble (JavaScript in C# strings)
+  pass/rules.cs     reads pass/rules.json and gives it to that script (format described at the top of the file)
+  pass/rules.json   rules for single sites where the script's guess about a login form is wrong (none yet)
   win.pass.cs       the save-password bubble: takes the page's report, decides what to offer, shows the bubble
   win.fill.cs       the key button in the address chip and the list of logins to fill; runs the fill script
   pass/fill.cs      the script that fills a login into a page (JavaScript in a C# string)

@@ -77,6 +77,9 @@
 
     <!-- The script of the fingerprint protection (fp/fp.cs fills it in). Embedded for the same reason. -->
     <EmbeddedResource Include="fp\farble.js" LogicalName="neat.fp.farble.js" />
+
+    <!-- Rules for single sites, for the save-password script (pass/rules.cs reads it). Embedded for the same reason. -->
+    <EmbeddedResource Include="pass\rules.json" LogicalName="neat.pass.rules.json" />
   </ItemGroup>
 
   <!-- The ad blocker's two downloads, put in ads-dl\ by tools\fetch-ads.ps1 (CI runs it before
