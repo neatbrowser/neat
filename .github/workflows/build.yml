@@ -26,8 +26,9 @@ jobs:
       - name: Vault self-check
         run: dotnet run --project tests/vault.check --configuration Release
 
-      # The two scripts that run inside web pages (src/neat/pass/capture.cs, which watches login
-      # forms, and src/neat/pass/fill.cs, which fills them) are JavaScript, so they are checked
+      # The scripts that run inside web pages (src/neat/pass/capture.cs, which watches login
+      # forms, src/neat/pass/fill.cs, which fills them, and the script in src/neat/pass/suggest.cs,
+      # which puts a suggested password in) are JavaScript, so they are checked
       # against made-up login pages with jsdom (tests/capture.check). The only package is
       # that test tool; nothing from it ends up in the app.
       - name: Setup Node
@@ -41,6 +42,7 @@ jobs:
           npm ci --no-audit --no-fund
           node check.js
           node check-fill.js
+          node check-suggest.js
 
       # The ad blocker's dll and filter lists (tools/fetch-ads.ps1). If they cannot be fetched the
       # build goes on without them and the app runs without a blocker.
