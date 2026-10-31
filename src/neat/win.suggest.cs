@@ -12,7 +12,7 @@ namespace neat;
 /// </summary>
 public sealed partial class Win
 {
-    private void Suggest(Tab tab, Windows.Foundation.Rect? anchor, bool symbols)
+    private void PasswordList(Tab tab, Windows.Foundation.Rect? anchor, bool symbols)
     {
         var pass = PasswordGen.Make(PasswordGen.Default, symbols);
 
@@ -35,14 +35,14 @@ public sealed partial class Win
         });
 
         var sym = new CheckBox { Content = "Symbols", IsChecked = symbols, MinWidth = 0 };
-        sym.Click += (s, e) => Suggest(tab, anchor, sym.IsChecked == true);
+        sym.Click += (s, e) => PasswordList(tab, anchor, sym.IsChecked == true);
         panel.Children.Add(sym);
 
         var use = new Button { Content = "Use" };
         use.Click += (s, e) => _ = Guard(() => UseSuggested(tab, pass), "using a suggested password");
 
         var other = new Button { Content = "Another" };
-        other.Click += (s, e) => Suggest(tab, anchor, sym.IsChecked == true);
+        other.Click += (s, e) => PasswordList(tab, anchor, sym.IsChecked == true);
 
         var cancel = new Button { Content = "Cancel" };
         cancel.Click += (s, e) => HideBubble();

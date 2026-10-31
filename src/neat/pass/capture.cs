@@ -462,6 +462,7 @@ internal static class CaptureScript
           let poll = null;
           let pointerAt = 0;
 
+          // v is the page's width in its own pixels: the window divides its own width by it to find the zoom.
           // Tells the window which field has the focus, or that none has (el = null). click: the focus
           // came from the person pressing the pointer on the field, which is when the window may open the list.
           const report = (el, click) => {
@@ -470,7 +471,7 @@ internal static class CaptureScript
             if (r && (r[2] < 60 || r[3] < 18) && document.documentElement.getBoundingClientRect().width > 0) k = '';
             at = k ? el : null;
             rectNow = k ? JSON.stringify(r) : '';
-            const o = k ? { t: 'field', k: k, r: r } : { t: 'field', r: null };
+            const o = k ? { t: 'field', k: k, r: r, v: window.innerWidth } : { t: 'field', r: null };
             const sig = JSON.stringify(o);
             if (sig !== said || (click && k)) {
               if (k && click) o.c = 1;

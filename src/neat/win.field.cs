@@ -51,7 +51,7 @@ public sealed partial class Win
             return;
 
         if (_fieldKind == "new")
-            Suggest(tab, at, true);
+            PasswordList(tab, at, true);
         else
             _ = Guard(() => OpenFill(at), "opening the fill list at a field");
     }
@@ -123,17 +123,13 @@ public sealed partial class Win
             i++;
         }
 
-        double zoom;
-        try
-        {
-            zoom = tab.View.ZoomFactor;
-        }
-        catch (Exception)
-        {
-            zoom = 1;
-        }
+        // The page's zoom: the view is as wide as the page's own width times the zoom.
+        var zoom = 1d;
+        if (msg.TryGetProperty("v", out var pageWidth) && pageWidth.ValueKind == JsonValueKind.Number
+            && pageWidth.TryGetDouble(out var pw) && pw >= 1 && pw < 100000 && tab.View.ActualWidth > 0)
+            zoom = tab.View.ActualWidth / pw;
 
-        if (!(zoom > 0.1 && zoom < 10))
+        if (!(zoom >= 0.25 && zoom <= 5))
             zoom = 1;
 
         var w = v[2] * zoom;
