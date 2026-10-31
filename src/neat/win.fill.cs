@@ -8,8 +8,9 @@ namespace neat;
 
 /// <summary>
 /// Filling a saved login into a page. Nothing fills by itself: not when a page loads, not when a
-/// field is clicked. The person presses the key button in the address chip (it shows only on a page
-/// that has saved logins), sees which address the login will go into, and picks one.
+/// field is clicked. The person presses the key button in the address chip, or the key over a login
+/// field (win.field.cs; a click on the field may open the list too). Both show only on a page that has
+/// saved logins. The person sees which address the login will go into, and picks one.
 ///
 /// The rules, from the plan for the vault:
 ///   - Only a login saved for exactly this page's origin (scheme, host and port) is offered, so an
@@ -44,7 +45,7 @@ public sealed partial class Win
 
     private void keybtn_Click(object sender, RoutedEventArgs e)
     {
-        _ = Guard(OpenFill, "opening the fill list");
+        _ = Guard(() => OpenFill(), "opening the fill list");
     }
 
     /// <summary>Shows the key button when the page in the selected tab has a saved login.</summary>
@@ -84,7 +85,7 @@ public sealed partial class Win
 
     // ---- the list ----
 
-    private async Task OpenFill()
+    private async Task OpenFill(Windows.Foundation.Rect? anchor = null)
     {
         var tab = _cur;
         var core = tab?.View.CoreWebView2;
@@ -123,15 +124,15 @@ public sealed partial class Win
 
         if (!vault.IsOpen)
         {
-            AskFillUnlock(tab);
+            AskFillUnlock(tab, anchor);
             return;
         }
 
-        ListLogins(tab);
+        ListLogins(tab, anchor);
     }
 
     /// <summary>The logins saved for the page in <paramref name="tab"/>, to pick one from.</summary>
-    private void ListLogins(Tab tab)
+    private void ListLogins(Tab tab, Windows.Foundation.Rect? anchor = null)
     {
         var core = tab.View.CoreWebView2;
         var origin = core is null ? null : Origin.Of(core.Source);
@@ -189,7 +190,7 @@ public sealed partial class Win
         cancel.Click += (s, e) => HideBubble();
         panel.Children.Add(cancel);
 
-        Present(panel, FillLife);
+        Present(panel, FillLife, anchor);
     }
 
     private static TextBlock Warn(string text)
@@ -205,7 +206,7 @@ public sealed partial class Win
 
     // ---- unlocking a password vault ----
 
-    private void AskFillUnlock(Tab tab)
+    private void AskFillUnlock(Tab tab, Windows.Foundation.Rect? anchor = null)
     {
         var box = new PasswordBox { PlaceholderText = "NEAT password" };
         var message = new TextBlock { FontSize = 12, Opacity = 0.7, TextWrapping = TextWrapping.Wrap };
@@ -227,7 +228,7 @@ public sealed partial class Win
                 StartFillIdle();
 
                 if (_cur == tab)
-                    ListLogins(tab);
+                    ListLogins(tab, anchor);
 
                 return;
             }
@@ -263,7 +264,7 @@ public sealed partial class Win
         panel.Children.Add(message);
         panel.Children.Add(bar);
 
-        Present(panel, FillLife);
+        Present(panel, FillLife, anchor);
     }
 
     private void StartFillIdle()
@@ -352,6 +353,15 @@ public sealed partial class Win
             "frame" => "Nothing was filled.",
             _ => "Could not fill this page.",
         };
+
+        // The list took the keyboard from the page: give it back, so typing goes on where it was.
+        try
+        {
+            tab.View.Focus(FocusState.Programmatic);
+        }
+        catch (Exception)
+        {
+        }
 
         Bubble(said, string.Empty, TimeSpan.FromSeconds(2.5));
     }

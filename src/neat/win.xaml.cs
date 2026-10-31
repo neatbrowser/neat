@@ -265,8 +265,9 @@ public sealed partial class Win : Window
         _ = Star();
         SessionDirty();
 
-        // A question about a login belongs to the tab it was asked in.
+        // A question about a login, and the key at a field, belong to the tab they were for.
         HideBubble();
+        HideField();
     }
 
     /// <summary>Closes a tab. Closing the last one closes the window.</summary>

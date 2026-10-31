@@ -415,6 +415,111 @@ internal static class CaptureScript
             if (!el || el.tagName !== 'INPUT') return;
             offer(closestDeep(el, 'form') || document);
           }, true);
+
+          // ---- the key at a login field (the window draws it) ----
+          //
+          // The page only says where the field that has the focus is, and what kind it is. The window
+          // draws the key and the list of saved logins over the page, so the page can neither read
+          // nor fake them, and nothing here fills anything. Only real focus and pointer events count.
+
+          // A field the key may sit at: shown, writable, not left out by a site rule, big enough to carry it.
+          const usableField = el => !!el && el.tagName === 'INPUT' && !el.readOnly && !el.disabled &&
+            (isPw(el) || TEXTY.has(el.type)) && visible(el) &&
+            !rulesNow().exclude.some(s => closestDeep(el, s));
+
+          // 'login' (a user name or password to fill in), 'new' (a password being chosen), or '' (no key).
+          const kindOf = el => {
+            if (!usableField(el)) return '';
+            const box = closestDeep(el, 'form') || document;
+            if (isPw(el)) {
+              const role = roleOf(el);
+              if (role === 'new' || role === 'confirm') return 'new';
+              if (role === 'cur') return 'login';
+              return classify(box) === 'register' ? 'new' : 'login';
+            }
+            if (SEARCH.test(attrs(el))) return '';
+            // A user name field: no key in a sign-up or change-password form.
+            const form = classify(box);
+            if (form === 'register' || form === 'change') return '';
+            // The field right before a password field of the same form or page, or one that says it is a user name.
+            const list = inputs(box);
+            const next = list.slice(list.indexOf(el) + 1).find(i => isPw(i) && visible(i));
+            if (next) {
+              const between = list.slice(list.indexOf(el) + 1, list.indexOf(next)).filter(i => TEXTY.has(i.type) && !isPw(i) && visible(i));
+              if (between.length === 0) return 'login';
+            }
+            return looksUser(el) ? 'login' : '';
+          };
+
+          const rectOf = el => {
+            const r = el.getBoundingClientRect();
+            return [Math.round(r.left), Math.round(r.top), Math.round(r.width), Math.round(r.height)];
+          };
+
+          let at = null;       // the field the window was last told about
+          let said = '{"t":"field","r":null}';   // what it was told, to say nothing twice (it starts knowing "no field")
+          let rectNow = '';
+          let poll = null;
+          let pointerAt = 0;
+
+          // Tells the window which field has the focus, or that none has (el = null). click: the focus
+          // came from the person pressing the pointer on the field, which is when the window may open the list.
+          const report = (el, click) => {
+            let k = el ? kindOf(el) : '';
+            const r = k ? rectOf(el) : null;
+            if (r && (r[2] < 60 || r[3] < 18) && document.documentElement.getBoundingClientRect().width > 0) k = '';
+            at = k ? el : null;
+            rectNow = k ? JSON.stringify(r) : '';
+            const o = k ? { t: 'field', k: k, r: r } : { t: 'field', r: null };
+            const sig = JSON.stringify(o);
+            if (sig !== said || (click && k)) {
+              if (k && click) o.c = 1;
+              said = sig;
+              post(o);
+            }
+            if (at && poll === null) poll = setInterval(follow, 400);
+            if (!at && poll !== null) { clearInterval(poll); poll = null; }
+          };
+
+          // The field moved (scrolling, a layout change) or went away.
+          const follow = () => {
+            if (!at) return;
+            if (!at.isConnected || !visible(at)) { report(null); return; }
+            if (JSON.stringify(rectOf(at)) !== rectNow) report(at);
+          };
+
+          document.addEventListener('pointerdown', e => {
+            if (!e.isTrusted) return;
+            pointerAt = Date.now();
+            // A press on the field that already has the focus gives no focus event: ask again.
+            const t = target(e);
+            if (t && t === at) report(at, true);
+          }, true);
+
+          document.addEventListener('focusin', e => {
+            if (!e.isTrusted) return;
+            const t = target(e);
+            report(t && t.tagName === 'INPUT' ? t : null, Date.now() - pointerAt < 500);
+          }, true);
+
+          // Focus moved to nothing: the person clicked elsewhere in the page. Not when the whole page lost the
+          // focus (the person is using the list the window drew), then the field is still where it was.
+          document.addEventListener('focusout', e => {
+            if (!e.isTrusted) return;
+            setTimeout(() => {
+              if (!document.hasFocus()) return;
+              let a = document.activeElement;
+              while (a && a.shadowRoot && a.shadowRoot.activeElement) a = a.shadowRoot.activeElement;
+              if (!a || a.tagName !== 'INPUT') report(null);
+            }, 0);
+          }, true);
+
+          document.addEventListener('keydown', e => {
+            if (e.isTrusted && e.key === 'Escape' && at) report(null);
+          }, true);
+
+          window.addEventListener('scroll', follow, true);
+          window.addEventListener('resize', follow);
         })();
         """;
 

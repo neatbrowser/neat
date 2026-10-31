@@ -90,6 +90,13 @@ public sealed partial class Win
             }
         };
 
+        // The key and the list at a field belong to the page that was there.
+        core.NavigationStarting += (s, e) =>
+        {
+            if (tab == _cur)
+                HideField();
+        };
+
         // A page finished loading while a login is held: find out if the login worked.
         core.NavigationCompleted += (s, e) =>
         {
@@ -174,6 +181,11 @@ public sealed partial class Win
                 if (first is not null)
                     _capture.HoldUser(tab, origin, first);
 
+                break;
+
+            case "field":
+                // Where the field with the focus is, for the key drawn over it (win.field.cs).
+                OnField(tab, origin, root);
                 break;
 
             case "gone":
@@ -420,10 +432,23 @@ public sealed partial class Win
     /// Puts a finished panel in the bubble and starts the timer that takes it down. The save question
     /// and the fill list (win.fill.cs) both use it, so only one of them is up at a time.
     /// </summary>
-    private void Present(UIElement panel, TimeSpan life)
+    private void Present(UIElement panel, TimeSpan life, Windows.Foundation.Rect? anchor = null)
     {
         bubble.Child = panel;
         bubble.Visibility = Visibility.Visible;
+
+        // Under a field of the page, or in the usual place under the address.
+        if (anchor is { } a)
+        {
+            var x = Math.Clamp(a.X, 8d, Math.Max(8d, root.ActualWidth - bubble.Width - 8));
+            bubble.HorizontalAlignment = HorizontalAlignment.Left;
+            bubble.Margin = new Thickness(x, a.Y + a.Height + 4, 0, 0);
+            _bubbleAnchored = true;
+        }
+        else
+        {
+            PlaceBubble();
+        }
 
         _bubbleTimer ??= MakeBubbleTimer();
         _bubbleTimer.Stop();
@@ -439,12 +464,23 @@ public sealed partial class Win
         return t;
     }
 
+    // The bubble is hanging under a field of the page (the fill list), not under the address.
+    private bool _bubbleAnchored;
+
+    private void PlaceBubble()
+    {
+        bubble.HorizontalAlignment = HorizontalAlignment.Center;
+        bubble.Margin = new Thickness(0, 40, 0, 0);
+        _bubbleAnchored = false;
+    }
+
     /// <summary>Takes the bubble down and lets go of the login it held.</summary>
     private void HideBubble()
     {
         _bubbleTimer?.Stop();
         _bubbleLogin = null;
         _bubbleEntry = null;
+        PlaceBubble();
 
         bubble.Child = null;
         bubble.Visibility = Visibility.Collapsed;

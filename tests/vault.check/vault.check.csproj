@@ -18,6 +18,7 @@
   <ItemGroup>
     <Compile Include="..\..\src\neat\vault\*.cs" LinkBase="vault" />
     <Compile Include="..\..\src\neat\pass\fill.cs" LinkBase="pass" />
+    <Compile Include="..\..\src\neat\pass\suggest.cs" LinkBase="pass" />
   </ItemGroup>
 
 </Project>

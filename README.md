@@ -80,7 +80,10 @@ src/neat/
   pass/rules.json   rules for single sites where the script's guess about a login form is wrong (none yet)
   win.pass.cs       the save-password bubble: takes the page's report, decides what to offer, shows the bubble
   win.fill.cs       the key button in the address chip and the list of logins to fill; runs the fill script
+  win.field.cs      the key drawn over a login field of the page, from where the page script says the field is
+  win.suggest.cs    the strong-password suggestion at a field where a new password is chosen
   pass/fill.cs      the script that fills a login into a page (JavaScript in a C# string)
+  pass/suggest.cs   the strong-password maker, and the script that puts a chosen password into the new-password fields
   vault/lookalike.cs how an address is shown before filling, and the warning for fake-looking ones
   vault/csv.cs      reading and writing CSV, the format other browsers export passwords in
   vault/exchange.cs turns another browser's password export into logins, and logins into one

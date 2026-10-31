@@ -32,14 +32,19 @@ const src = rules => SOURCE.replace('__TOKEN__', TOKEN).replace('__RULES__', JSO
 let ran = 0;
 let failed = 0;
 
+const later = [];
+
+// A check may be async (it waits for a timer); those run one after the other, after the plain ones.
 function check(name, fn) {
   ran++;
+  const done = () => console.log('ok    ' + name);
+  const bad = e => { failed++; console.log('FAIL  ' + name + '\n        ' + e.message); };
   try {
-    fn();
-    console.log('ok    ' + name);
+    const r = fn();
+    if (r && typeof r.then === 'function') later.push(() => r.then(done, bad));
+    else done();
   } catch (e) {
-    failed++;
-    console.log('FAIL  ' + name + '\n        ' + e.message);
+    bad(e);
   }
 }
 
@@ -103,6 +108,9 @@ function load(html, opts = {}) {
         (typeof el === 'string' ? $(el) : el).dispatchEvent(new win.KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, composed: true }));
       } finally { state.real = false; }
     },
+    focus: el => { state.real = true; try { (typeof el === 'string' ? $(el) : el).focus(); } finally { state.real = false; } },
+    blur: el => { state.real = true; try { (typeof el === 'string' ? $(el) : el).blur(); } finally { state.real = false; } },
+    pointer: el => { state.real = true; try { (typeof el === 'string' ? $(el) : el).dispatchEvent(new win.MouseEvent('pointerdown', { bubbles: true, composed: true })); } finally { state.real = false; } },
     // The same action made by the page's own script.
     fakeClick: el => (typeof el === 'string' ? $(el) : el).click(),
     fakeKey: (el, key) => (typeof el === 'string' ? $(el) : el).dispatchEvent(new win.KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })),
@@ -816,5 +824,127 @@ check('HasPassword: a password field in a shadow root, or shown as text, still c
   expect(run('<input type="text" name="nickname">') === false, 'an ordinary text field');
 });
 
-console.log('\n' + (ran - failed) + ' of ' + ran + ' checks passed.');
-process.exit(failed === 0 ? 0 : 1);
+// ---- the key at a login field ----
+
+// What the window was told about fields, in order. jsdom has no layout, so the field's box is made up.
+const fieldsOf = p => p.got().filter(x => x.t === 'field');
+const boxed = (p, sel, r) => {
+  const el = p.$(sel);
+  el.getBoundingClientRect = () => ({ left: r[0], top: r[1], width: r[2], height: r[3] });
+  return el;
+};
+const focusReal = (p, el, pointer) => {
+  // A real focus change; with pointer, the press that brings it comes just before.
+  if (pointer) p.pointer(el);
+  p.focus(el);
+};
+
+check('focusing a password field tells the window where it is and what it is', () => {
+  const p = load(LOGIN);
+  const pw = boxed(p, '#p', [100, 200, 240, 36]);
+  p.focus(pw);
+  const f = fieldsOf(p);
+  expect(f.length === 1, 'got ' + JSON.stringify(f));
+  expect(f[0].k === 'login' && JSON.stringify(f[0].r) === '[100,200,240,36]' && !('c' in f[0]), JSON.stringify(f[0]));
+  expect(p.live() === 1, 'it should follow the field');
+});
+
+check('a press on the field before the focus asks the window to open the list', () => {
+  const p = load(LOGIN);
+  const u = boxed(p, '#u', [10, 10, 200, 30]);
+  focusReal(p, u, true);
+  const f = fieldsOf(p);
+  expect(f.length === 1 && f[0].k === 'login' && f[0].c === 1, JSON.stringify(f));
+});
+
+check('a user name field right before a password field gets the key, a search box does not', () => {
+  const p = load(`<input id="s" type="text" name="q" placeholder="Search"><form onsubmit="return false"><input id="u" type="text" name="foo"><input id="p" type="password"></form>`);
+  boxed(p, '#u', [0, 0, 200, 30]); boxed(p, '#s', [0, 0, 200, 30]);
+  p.focus('#s');
+  expect(fieldsOf(p).length === 0, 'a search box got the key');
+  p.focus('#u');
+  expect(fieldsOf(p).length === 1 && fieldsOf(p)[0].k === 'login', JSON.stringify(fieldsOf(p)));
+});
+
+check('a user name field with no password after it needs to say it is a user name', () => {
+  const p = load(`<input id="a" type="text" name="foo"><input id="b" type="email" name="x">`);
+  boxed(p, '#a', [0, 0, 200, 30]); boxed(p, '#b', [0, 0, 200, 30]);
+  p.focus('#a');
+  expect(fieldsOf(p).length === 0, 'a plain text box got the key');
+  p.focus('#b');
+  expect(fieldsOf(p).length === 1 && fieldsOf(p)[0].k === 'login', JSON.stringify(fieldsOf(p)));
+});
+
+check('a sign-up form gets a new-password key and no key at the user name', () => {
+  const p = load(`<h1>Create your account</h1><form onsubmit="return false"><input id="u" type="text" name="user">
+    <input id="p" type="password" autocomplete="new-password"><button>Sign up</button></form>`);
+  boxed(p, '#u', [0, 0, 200, 30]); boxed(p, '#p', [0, 40, 200, 30]);
+  p.focus('#u');
+  expect(fieldsOf(p).length === 0, 'the user name of a sign-up form got a key');
+  p.focus('#p');
+  expect(fieldsOf(p).length === 1 && fieldsOf(p)[0].k === 'new', JSON.stringify(fieldsOf(p)));
+});
+
+check('no key for a tiny, read-only, disabled or rule-excluded field, or an event the page made up', () => {
+  const p = load(LOGIN, { rules: { 'example.com': { exclude: ['.skip'] } } });
+  const pw = boxed(p, '#p', [0, 0, 20, 10]);
+  p.win.document.documentElement.getBoundingClientRect = () => ({ left: 0, top: 0, width: 800, height: 600 });
+  p.focus(pw);
+  expect(fieldsOf(p).length === 0, 'a field too small for a key got one');
+  boxed(p, '#p', [0, 0, 240, 36]);
+  p.$('#p').readOnly = true; p.focus('#p');
+  expect(fieldsOf(p).length === 0, 'a read-only field got a key');
+  p.$('#p').readOnly = false; p.$('#p').disabled = true; p.focus('#p');
+  expect(fieldsOf(p).length === 0, 'a disabled field got a key');
+  const q = load(`<div class="skip"><input id="p" type="password"></div>`, { rules: { 'example.com': { exclude: ['.skip'] } } });
+  boxed(q, '#p', [0, 0, 240, 36]); q.focus('#p');
+  expect(fieldsOf(q).length === 0, 'a field the rules leave out got a key');
+  const r = load(LOGIN);
+  boxed(r, '#p', [0, 0, 240, 36]);
+  // An event the page made up (a real focus() call is a real focus event, and only moves the key).
+  r.$('#p').dispatchEvent(new r.win.FocusEvent('focusin', { bubbles: true, composed: true }));
+  expect(fieldsOf(r).length === 0, 'an event that is not real counted');
+});
+
+check('the window is told when the field moves, goes away, or Escape is pressed', () => {
+  const p = load(LOGIN);
+  const pw = boxed(p, '#p', [100, 200, 240, 36]);
+  p.focus(pw);
+  boxed(p, '#p', [100, 150, 240, 36]);
+  p.tick();
+  let f = fieldsOf(p);
+  expect(f.length === 2 && JSON.stringify(f[1].r) === '[100,150,240,36]', 'moved: ' + JSON.stringify(f));
+  p.tick();
+  expect(fieldsOf(p).length === 2, 'said the same thing twice');
+  p.$('#p').style.display = 'none';
+  p.tick();
+  f = fieldsOf(p);
+  expect(f.length === 3 && f[2].r === null, 'gone: ' + JSON.stringify(f));
+  expect(p.live() === 0, 'still following a field that is gone');
+  const q = load(LOGIN);
+  boxed(q, '#p', [0, 0, 240, 36]); q.focus('#p'); q.key('#p', 'Escape');
+  f = fieldsOf(q);
+  expect(f.length === 2 && f[1].r === null, 'Escape: ' + JSON.stringify(f));
+});
+
+check('clicking elsewhere in the page takes the key away, a page that lost the focus does not', async () => {
+  const p = load(LOGIN + '<p id="x">text</p>');
+  boxed(p, '#p', [0, 0, 240, 36]);
+  p.focus('#p');
+  p.win.document.hasFocus = () => false;
+  p.blur('#p');
+  await new Promise(r => setTimeout(r, 10));
+  expect(fieldsOf(p).length === 1, 'told that the field went when the whole page lost the focus');
+  p.win.document.hasFocus = () => true;
+  p.focus('#p');
+  p.blur('#p');
+  await new Promise(r => setTimeout(r, 10));
+  const f = fieldsOf(p);
+  expect(f.length === 2 && f[1].r === null, 'not told after a click elsewhere: ' + JSON.stringify(f));
+});
+
+(async () => {
+  for (const run of later) await run();
+  console.log('\n' + (ran - failed) + ' of ' + ran + ' checks passed.');
+  process.exit(failed === 0 ? 0 : 1);
+})();

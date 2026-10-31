@@ -74,6 +74,7 @@ internal static class Program
         Run("a change-password form keeps the old password with the held login", CaptureOld);
         Run("a server that refuses a login is told apart from background calls", LoginNetRefuses);
         Run("a refused login is dropped, a good answer proves nothing", CaptureAnswered);
+        Run("a suggested password has every kind of character and the right length", PasswordGenerated);
         Run("a site can be taken off the never list", NeverRemove);
         Run("the vault code never logs", NoLogging);
         Run("the real number of PBKDF2 rounds works", RealRounds);
@@ -1064,6 +1065,24 @@ internal static class Program
         capture.Hold(other, "https://example.com", "a", "b");
         capture.Clear();
         Expect(!capture.Holds(tab) && !capture.Holds(other), "clear forgets all");
+    }
+
+    private static void PasswordGenerated()
+    {
+        for (var n = 0; n < 200; n++)
+        {
+            var p = PasswordGen.Make();
+            Expect(p.Length == PasswordGen.Default, "default length");
+            Expect(p.Any(char.IsLower) && p.Any(char.IsUpper) && p.Any(char.IsDigit) && p.Any(c => !char.IsLetterOrDigit(c)), "every kind: " + p.Length);
+            Expect(p.IndexOfAny(new[] { 'l', 'I', 'O', '0', '1' }) < 0, "no look-alike letters or digits");
+
+            var plain = PasswordGen.Make(12, false);
+            Expect(plain.Length == 12 && plain.All(char.IsLetterOrDigit), "no symbols when switched off");
+            Expect(plain.Any(char.IsLower) && plain.Any(char.IsUpper) && plain.Any(char.IsDigit), "every kind without symbols");
+        }
+
+        Expect(PasswordGen.Make(1).Length == 8 && PasswordGen.Make(1000).Length == 128, "length is kept between 8 and 128");
+        Expect(PasswordGen.Make() != PasswordGen.Make(), "two passwords differ");
     }
 
     private static void LoginNetRefuses()

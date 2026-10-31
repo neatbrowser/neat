@@ -680,6 +680,28 @@
         <!-- The save-password bubble (win.pass.cs). It hangs under the address chip and is filled
              in code. Nothing dims the page behind it and it never blocks it. Like the command bar,
              it is always dark, so it is always drawn with the dark theme. -->
+        <!-- The key drawn over a login field of the page (win.field.cs). The page script only says where the
+             field is; this is NEAT's own control, so a page can neither see nor press it. Placed in code. It
+             comes before the bubble, so the list it opens covers it. -->
+        <Button
+            x:Name="fieldkey"
+            Grid.RowSpan="2"
+            Visibility="Collapsed"
+            HorizontalAlignment="Left"
+            VerticalAlignment="Top"
+            Width="24"
+            Height="24"
+            Padding="0"
+            CornerRadius="6"
+            Background="#E6121212"
+            BorderBrush="#FF2E2E2E"
+            BorderThickness="1"
+            RequestedTheme="Dark"
+            Click="fieldkey_Click"
+            ToolTipService.ToolTip="Fill a saved login">
+            <FontIcon Glyph="&#xE8D7;" FontSize="12"/>
+        </Button>
+
         <Border
             x:Name="bubble"
             Grid.RowSpan="2"
