@@ -117,6 +117,24 @@ public sealed class Capture
         _held.Remove(tab);
     }
 
+    /// <summary>
+    /// Told about an answer the tab's page received. If a login is held for the tab and the answer
+    /// is the server refusing a request of the same site (see <see cref="LoginNet"/>), the held login
+    /// is dropped, as for any failed login, and this returns true. Nothing is ever offered because
+    /// of an answer: a good one proves nothing and is ignored.
+    /// </summary>
+    public bool Answered(object tab, string? method, string? url, int status)
+    {
+        if (!_held.TryGetValue(tab, out var p) || !Fresh(p))
+            return false;
+
+        if (!LoginNet.Refuses(p.Site, method, url, status))
+            return false;
+
+        Drop(tab);
+        return true;
+    }
+
     /// <summary>Forgets everything held for a tab that has been closed.</summary>
     public void Forget(object tab)
     {

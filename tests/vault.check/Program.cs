@@ -72,6 +72,8 @@ internal static class Program
         Run("export needs a sign-in and gives every login", ExportLogins);
         Run("a changed password finds the entry it replaces", MatchOldPassword);
         Run("a change-password form keeps the old password with the held login", CaptureOld);
+        Run("a server that refuses a login is told apart from background calls", LoginNetRefuses);
+        Run("a refused login is dropped, a good answer proves nothing", CaptureAnswered);
         Run("a site can be taken off the never list", NeverRemove);
         Run("the vault code never logs", NoLogging);
         Run("the real number of PBKDF2 rounds works", RealRounds);
@@ -1062,6 +1064,93 @@ internal static class Program
         capture.Hold(other, "https://example.com", "a", "b");
         capture.Clear();
         Expect(!capture.Holds(tab) && !capture.Holds(other), "clear forgets all");
+    }
+
+    private static void LoginNetRefuses()
+    {
+        const string site = "https://example.com";
+
+        // The answers that mean "refused", for a request that changes something on the same site.
+        foreach (var status in new[] { 400, 401, 403, 422, 429 })
+            Expect(LoginNet.Refuses(site, "POST", "https://example.com/login", status), $"{status} refuses");
+
+        // A good answer proves nothing, and neither do answers background calls often give.
+        foreach (var status in new[] { 200, 204, 302, 404, 500, 503 })
+            Expect(!LoginNet.Refuses(site, "POST", "https://example.com/login", status), $"{status} does not refuse");
+
+        // Only a request that changes something counts.
+        Expect(LoginNet.Refuses(site, "put", "https://example.com/session", 401), "PUT, in lower case");
+        Expect(!LoginNet.Refuses(site, "GET", "https://example.com/login", 401), "GET");
+        Expect(!LoginNet.Refuses(site, "HEAD", "https://example.com/login", 401), "HEAD");
+        Expect(!LoginNet.Refuses(site, "OPTIONS", "https://example.com/login", 401), "OPTIONS");
+        Expect(!LoginNet.Refuses(site, null, "https://example.com/login", 401), "no method");
+
+        // The same site: its own host, a subdomain, a sibling subdomain, another port.
+        Expect(LoginNet.Refuses(site, "POST", "https://api.example.com/v1/auth", 401), "a subdomain");
+        Expect(LoginNet.Refuses("https://accounts.example.com", "POST", "https://api.example.com/auth", 401), "a sibling");
+        Expect(LoginNet.Refuses("https://www.example.com", "POST", "https://example.com/auth", 401), "the parent");
+        Expect(LoginNet.Refuses("https://example.com:8443", "POST", "https://example.com/auth", 401), "the port is not part of the site here");
+
+        // Other sites, look-alikes, bad addresses.
+        Expect(!LoginNet.Refuses(site, "POST", "https://other.org/login", 401), "another site");
+        Expect(!LoginNet.Refuses(site, "POST", "https://notexample.com/login", 401), "a host that only ends the same");
+        Expect(!LoginNet.Refuses(site, "POST", "https://example.com.evil.test/login", 401), "a host that only begins the same");
+        Expect(!LoginNet.Refuses(site, "POST", null, 401), "no address");
+        Expect(!LoginNet.Refuses(site, "POST", "not an address", 401), "not an address");
+        Expect(!LoginNet.Refuses(site, "POST", "data:text/plain,hello", 401), "not a web address");
+
+        // An address matches exactly, never by a shared tail.
+        Expect(LoginNet.Refuses("http://192.168.0.1", "POST", "http://192.168.0.1/login", 401), "the same address");
+        Expect(!LoginNet.Refuses("http://192.168.0.1", "POST", "http://192.168.0.2/login", 401), "a neighbouring address");
+        Expect(!LoginNet.Refuses("http://10.0.0.1", "POST", "http://20.0.0.1/login", 401), "an address with the same tail");
+
+        // Bookkeeping calls are not the login: by host word, or by a whole path segment.
+        Expect(!LoginNet.Refuses(site, "POST", "https://analytics.example.com/event", 403), "an analytics host");
+        Expect(!LoginNet.Refuses(site, "POST", "https://example.com/api/telemetry", 403), "a telemetry path");
+        Expect(!LoginNet.Refuses(site, "POST", "https://example.com/api/log", 400), "a log path");
+        Expect(!LoginNet.Refuses(site, "POST", "https://example.com/csp-report", 400), "a report path");
+        Expect(LoginNet.Refuses(site, "POST", "https://example.com/login", 401), "/login is not /log");
+        Expect(LoginNet.Refuses(site, "POST", "https://example.com/api/login/password", 401), "a longer path with login in it");
+        Expect(LoginNet.Refuses(site, "POST", "https://example.com/users/logout-all/login", 401), "a segment that only starts like one");
+    }
+
+    private static void CaptureAnswered()
+    {
+        var now = new DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+        var capture = new Capture { Clock = () => now };
+        var tab = new object();
+        var other = new object();
+        const string login = "https://example.com/api/login";
+
+        // Nothing held: nothing to drop.
+        Expect(!capture.Answered(tab, "POST", login, 401), "nothing held, nothing dropped");
+
+        capture.Hold(tab, "https://example.com/login", "alice", "secret");
+        capture.Hold(other, "https://example.com/login", "bob", "secret");
+
+        // A good answer, a background call and another site's call leave it alone.
+        Expect(!capture.Answered(tab, "POST", login, 200), "a good answer");
+        Expect(!capture.Answered(tab, "GET", login, 401), "a GET");
+        Expect(!capture.Answered(tab, "POST", "https://tracker.test/collect", 401), "another site");
+        Expect(capture.Holds(tab), "still held after those");
+
+        // The server refuses: that tab's login goes, the other tab's stays.
+        Expect(capture.Answered(tab, "POST", login, 401), "refused");
+        Expect(!capture.Holds(tab) && capture.Take(tab) is null, "dropped means gone");
+        Expect(capture.Holds(other), "another tab's login is not touched");
+        Expect(!capture.Answered(tab, "POST", login, 401), "a second answer finds nothing to drop");
+
+        // A login that has waited too long is gone already.
+        capture.Hold(tab, "https://example.com/login", "alice", "secret");
+        now = now.AddSeconds(16);
+        Expect(!capture.Answered(tab, "POST", login, 401), "an expired login is not reported as dropped");
+
+        // The user name of a first step survives a refused login: the person tries the password again.
+        capture.HoldUser(tab, "https://example.com", "alice");
+        capture.Hold(tab, "https://example.com", string.Empty, "wrong");
+        Expect(capture.Answered(tab, "POST", login, 401), "refused again");
+        capture.Hold(tab, "https://example.com", string.Empty, "right");
+        Expect(capture.Take(tab)!.User == "alice", "the first step's user name was kept");
     }
 
     private static void CaptureRefuse()

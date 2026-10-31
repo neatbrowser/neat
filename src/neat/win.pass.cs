@@ -17,7 +17,9 @@ namespace neat;
 ///      password, and only for a real click or key. The window holds them for a few seconds.
 ///   2. The page moves on. If the next page has no password field, or the field went away
 ///      without a new page, the login is taken to have worked. If the form is still there it
-///      did not, and the held login is dropped.
+///      did not, and the held login is dropped. A server that answers a request of the same site
+///      with "refused" (401, 403 and the like) drops it sooner (vault/loginnet.cs); a good answer
+///      never offers anything by itself.
 ///   3. Only then is the person asked, in a small bubble under the address, with Save, Not now and
 ///      Never for this site. Nothing is saved without a click, and nothing blocks the page.
 ///
@@ -66,6 +68,27 @@ public sealed partial class Win
         {
             Log.Error("pass", ex, "could not switch off the built-in password saving");
         }
+
+        // A server that refuses the login says so before the page does: drop the held login at once
+        // (vault/loginnet.cs decides). It is only ever used to drop, never to offer. The held-login test
+        // comes first, so every other response costs one dictionary lookup. Nothing of the request or
+        // the answer is logged but the status: an address or a body may hold a secret.
+        core.WebResourceResponseReceived += (s, e) =>
+        {
+            try
+            {
+                if (!_capture.Holds(tab))
+                    return;
+
+                var status = e.Response.StatusCode;
+                if (_capture.Answered(tab, e.Request.Method, e.Request.Uri, status))
+                    Log.Write("pass", "a held login was dropped: the server answered " + status);
+            }
+            catch (Exception ex)
+            {
+                Log.Write("pass", "an answer could not be judged (" + ex.GetType().Name + ")");
+            }
+        };
 
         // A page finished loading while a login is held: find out if the login worked.
         core.NavigationCompleted += (s, e) =>

@@ -73,6 +73,7 @@ src/neat/
   vault/origin.cs   the one way a site is written: scheme, host in ASCII, port
   vault/gate.cs     the gate: who may show, copy or delete a password (Hello or NEAT password), how long
   vault/capture.cs  a login a page just showed, held until it is known whether the login worked
+  vault/loginnet.cs what the network says about a held login: a server that refuses it (401, 403, ...) drops it at once
   vault/never.cs    the sites the person said never to offer to save a password for (kept in settings.json)
   pass/capture.cs   the two page scripts of the save-password bubble (JavaScript in C# strings)
   pass/rules.cs     reads pass/rules.json and gives it to that script (format described at the top of the file)
