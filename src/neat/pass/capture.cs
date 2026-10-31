@@ -31,6 +31,12 @@ namespace neat;
 ///     so closing a login dialog after typing does not look like a login that worked. A control that is
 ///     not a button but looks clickable (cursor: pointer, a styled div) counts only when a filled
 ///     password field is on show, so that it never starts the two-step guess on its own.
+///   - Which password field is which (the one now in use, the new one, its confirmation) is read from
+///     autocomplete and from what the field says about itself (label, placeholder, name). Where that
+///     is not enough, the form's own words decide what kind of form it is (classify below: heading,
+///     buttons, links, checkboxes): a form that is plainly a change-password form, with two different
+///     passwords and no marks, is reported as the new password with the old one beside it. A sign-in
+///     or sign-up form with two different passwords is still taken for a typing mistake and left alone.
 ///   - Rules for single sites (pass/rules.json, filled in as __RULES__) can leave a part of a page
 ///     out, or name the exact user name and password fields of a form the guess gets wrong.
 ///   - It runs in the page's own world, so the page can see that it exists. What it sends
@@ -234,6 +240,91 @@ internal static class CaptureScript
             return null;
           };
 
+          // ---- which password is which, and what kind of form it is ----
+
+          const squash = t => (t || '').replace(/\s+/g, ' ').trim().toLowerCase().slice(0, 120);
+
+          // What a field says about itself: its label, placeholder, name and id.
+          const labelsOf = i => {
+            const out = [i.getAttribute('aria-label'), i.getAttribute('placeholder'), i.name, i.id];
+            try { for (const l of Array.from(i.labels || [])) out.push(l.textContent); } catch (e) {}
+            try {
+              const root = i.getRootNode();
+              for (const id of (i.getAttribute('aria-labelledby') || '').split(/\s+/)) {
+                const el = id && root.getElementById ? root.getElementById(id) : null;
+                if (el) out.push(el.textContent);
+              }
+            } catch (e) {}
+            // Names are written new_password or newPassword: made into words, so \b can see them.
+            return out.map(t => squash((t || '').replace(/([a-z])([A-Z])/g, '$1 $2').replace(/[_.\[\]]+/g, ' '))).join(' ');
+          };
+
+          const RE_CONFIRM = /\b(confirm|repeat|retype|re-?enter|again|verify)\b|nhập lại|xác nhận|lặp lại/;
+          const RE_CURRENT = /\b(current|existing|old|previous)\b|hiện tại|mật khẩu cũ/;
+          const RE_NEW = /\b(new|create|choose)\b|mật khẩu mới/;
+
+          // 'cur' (the password in use now), 'new', 'confirm', or '' when nothing says.
+          const roleOf = i => {
+            const mark = (i.getAttribute('autocomplete') || '').toLowerCase();
+            const text = labelsOf(i);
+            if (RE_CONFIRM.test(text)) return 'confirm';
+            if (mark === 'new-password' || RE_NEW.test(text)) return 'new';
+            if (mark === 'current-password' || RE_CURRENT.test(text)) return 'cur';
+            return '';
+          };
+
+          const RE_LOGIN = /\b(log ?in|sign ?in|login|welcome back)\b|đăng nhập/;
+          const RE_REGISTER = /\b(sign ?up|register|create (an |your )?account|join|get started|new account)\b|đăng ký|tạo tài khoản/;
+          const RE_CHANGE = /\b(change|update|reset|set|choose|create) (a |your |the |new )*password\b|\bpassword (change|reset|update)\b|đổi mật khẩu|đặt lại mật khẩu|cập nhật mật khẩu/;
+          const RE_FORGOT = /forgot|lost (your )?password|quên mật khẩu/;
+          const RE_REMEMBER = /remember|keep me|stay (signed|logged)|ghi nhớ|duy trì/;
+          const RE_TERMS = /\bterms\b|privacy|i agree|điều khoản|chính sách|tôi đồng ý/;
+
+          // The kind of form, from its own words: 'login', 'register', 'change', or '' when it is not
+          // clear (the two best kinds are less than 2 points apart). It only reads text the person
+          // can see and counts a button's label most. This is the one place that judges a form, so a
+          // better judge can be put here without touching the rest.
+          const classify = container => {
+            const root = container && container.querySelectorAll ? container : document;
+            const score = { login: 0, register: 0, change: 0 };
+            const vote = (text, points) => {
+              if (RE_LOGIN.test(text)) score.login += points;
+              if (RE_REGISTER.test(text)) score.register += points;
+              if (RE_CHANGE.test(text)) score.change += points;
+            };
+
+            // Headings in the form, or in the nearest parent that has any (up to three levels up).
+            const HEAD = 'h1, h2, h3, h4, legend, [role="heading"]';
+            let heads = [];
+            for (let n = root, k = 0; n && k < 4; n = n.parentElement || n.host || null, k++) {
+              heads = Array.from(n.querySelectorAll(HEAD)).filter(visible).slice(0, 3);
+              if (heads.length || n === document) break;
+            }
+            heads.forEach(h => vote(squash(h.textContent), 2));
+            vote(squash(document.title), 1);
+
+            const label = el => squash((el.getAttribute('aria-label') || '') + ' ' + (el.tagName === 'INPUT' ? el.value || '' : '') + ' ' + (el.textContent || ''));
+            Array.from(root.querySelectorAll('button, input[type="submit"], [role="button"]')).filter(visible).slice(0, 6)
+              .forEach(b => vote(label(b), 3));
+
+            const links = Array.from(root.querySelectorAll('a[href], [role="link"]')).filter(visible).slice(0, 12).map(a => squash(a.textContent));
+            if (links.some(t => RE_FORGOT.test(t))) score.login += 2;
+
+            const boxes = Array.from(root.querySelectorAll('input[type="checkbox"]')).filter(visible).slice(0, 6)
+              .map(c => squash(labelsOf(c) + ' ' + (c.parentElement ? c.parentElement.textContent : '')));
+            if (boxes.some(t => RE_REMEMBER.test(t))) score.login += 2;
+            if (boxes.some(t => RE_TERMS.test(t)) || (root !== document && RE_TERMS.test(squash(root.textContent)))) score.register += 2;
+
+            const roles = shownPw(root).map(roleOf);
+            if (roles.includes('cur') && roles.includes('new')) score.change += 3;
+            if (roles.includes('confirm')) { score.register += 1; score.change += 1; }
+
+            const ranked = Object.keys(score).sort((a, b) => score[b] - score[a]);
+            return score[ranked[0]] > 0 && score[ranked[0]] - score[ranked[1]] >= 2 ? ranked[0] : '';
+          };
+
+          const shownPw = root => inputs(root).filter(i => isPw(i) && visible(i));
+
           let seq = 0;
           let last = null;
           // strict: the click came from something that is not a button, so it only counts when a
@@ -252,9 +343,8 @@ internal static class CaptureScript
               const shown = list.filter(i => isPw(i) && visible(i));
               if (shown.length === 0) { if (!strict) step(list); return; }
               const pws = shown.filter(i => i.value.length > 0);
-              const mark = i => (i.getAttribute('autocomplete') || '').toLowerCase();
-              const current = pws.filter(i => mark(i) === 'current-password');
-              const fresh = pws.filter(i => mark(i) === 'new-password');
+              const current = pws.filter(i => roleOf(i) === 'cur');
+              const fresh = pws.filter(i => roleOf(i) === 'new' || roleOf(i) === 'confirm');
               if (current.length === 1 && fresh.length >= 1 && fresh.every(i => i.value === fresh[0].value) &&
                   fresh[0].value !== current[0].value) {
                 // A change-password form that says which field is which: the old password and the new one.
@@ -262,6 +352,11 @@ internal static class CaptureScript
                 pick = fresh[0];
               } else if (pws.length === 1) pick = pws[0];
               else if (pws.length === 2 && pws[0].value === pws[1].value) pick = pws[0];
+              else if (pws.length === 2 && pws.every(i => roleOf(i) === '') && classify(root) === 'change') {
+                // Nothing marks the two fields, but the form says it changes the password: the old one, then the new.
+                old = pws[0].value;
+                pick = pws[1];
+              }
               else if (pws.length === 3 && pws[1].value === pws[2].value && pws[0].value !== pws[1].value) {
                 // Old password, then the new one twice.
                 old = pws[0].value;

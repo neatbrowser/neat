@@ -724,6 +724,83 @@ check('a rule cannot be changed by the page: the script keeps no globals even wi
   expect(SOURCE.includes('__RULES__'), 'the rules are not a placeholder in the source');
 });
 
+// ---- which password is which, and what kind of form it is ----
+
+const CHANGE_FORM = (a, b, extra) => `<form onsubmit="return false">${extra || ''}${a}${b}<button id="go">Save</button></form>`;
+
+check('the old and the new password are told apart by what the fields say (label, placeholder, name)', () => {
+  const report = html => {
+    const p = load(html);
+    p.set('#a', 'old-secret'); p.set('#b', 'new-secret');
+    p.click('#go');
+    return p.got().find(x => x.t === 'offer');
+  };
+  const labelled = report(CHANGE_FORM('<label for="a">Current password</label><input id="a" type="password">', '<label for="b">New password</label><input id="b" type="password">'));
+  expect(labelled && labelled.p === 'new-secret' && labelled.o === 'old-secret', 'labels: ' + JSON.stringify(labelled));
+  const holder = report(CHANGE_FORM('<input id="a" type="password" placeholder="Old password">', '<input id="b" type="password" placeholder="New password">'));
+  expect(holder && holder.p === 'new-secret' && holder.o === 'old-secret', 'placeholders: ' + JSON.stringify(holder));
+  const named = report(CHANGE_FORM('<input id="a" type="password" name="existing_password">', '<input id="b" type="password" name="new_password">'));
+  expect(named && named.p === 'new-secret' && named.o === 'old-secret', 'names: ' + JSON.stringify(named));
+  const vn = report(CHANGE_FORM('<input id="a" type="password" aria-label="Mật khẩu hiện tại">', '<input id="b" type="password" aria-label="Mật khẩu mới">'));
+  expect(vn && vn.p === 'new-secret' && vn.o === 'old-secret', 'Vietnamese: ' + JSON.stringify(vn));
+});
+
+check('old, new and its confirmation are found whatever the order, and "confirm new" is a confirmation', () => {
+  const p = load(`<form onsubmit="return false">
+    <input id="n" type="password" placeholder="New password"><input id="c" type="password" placeholder="Confirm new password">
+    <input id="o" type="password" placeholder="Current password"><button id="go">Save</button></form>`);
+  p.set('#n', 'brand-new'); p.set('#c', 'brand-new'); p.set('#o', 'before');
+  p.click('#go');
+  const o = p.got().find(x => x.t === 'offer');
+  expect(o && o.p === 'brand-new' && o.o === 'before', 'got ' + JSON.stringify(p.got()));
+});
+
+check('two unmarked passwords on a form that says it changes the password: the old, then the new', () => {
+  const report = (page, a, b) => {
+    const p = load(page);
+    p.set('#a', a); p.set('#b', b);
+    p.click('#go');
+    return p.got().find(x => x.t === 'offer');
+  };
+  const two = '<input id="a" type="password"><input id="b" type="password">';
+  // By the heading, outside the form.
+  const byHeading = report(`<h1>Change password</h1><form onsubmit="return false">${two}<button id="go">Save</button></form>`, 'old1', 'new1');
+  expect(byHeading && byHeading.p === 'new1' && byHeading.o === 'old1', 'heading: ' + JSON.stringify(byHeading));
+  // By the button.
+  const byButton = report(`<form onsubmit="return false">${two}<button id="go">Update password</button></form>`, 'old2', 'new2');
+  expect(byButton && byButton.p === 'new2' && byButton.o === 'old2', 'button: ' + JSON.stringify(byButton));
+  // In Vietnamese.
+  const vn = report(`<form onsubmit="return false">${two}<button id="go">Đổi mật khẩu</button></form>`, 'old3', 'new3');
+  expect(vn && vn.p === 'new3' && vn.o === 'old3', 'Vietnamese: ' + JSON.stringify(vn));
+});
+
+check('two different passwords on a sign-in, a sign-up or an unclear form are still left alone', () => {
+  const none = (page) => {
+    const p = load(page);
+    p.set('#a', 'one'); p.set('#b', 'two');
+    p.click('#go');
+    return p.got().length === 0;
+  };
+  const two = '<input id="a" type="password"><input id="b" type="password">';
+  expect(none(`<h1>Sign in</h1><form onsubmit="return false">${two}<button id="go">Sign in</button></form>`), 'sign in');
+  expect(none(`<h1>Create account</h1><form onsubmit="return false">${two}<button id="go">Sign up</button></form>`), 'sign up (a typo in the confirmation)');
+  expect(none(`<form onsubmit="return false">${two}<button id="go">Continue</button></form>`), 'nothing says what it is');
+  // Fields that say they are for a NEW password are not the old one, whatever the heading says.
+  expect(none(`<h1>Create a password</h1><form onsubmit="return false"><input id="a" type="password" placeholder="New password">
+    <input id="b" type="password" placeholder="Confirm password"><button id="go">Continue</button></form>`), 'a new password and a mistyped confirmation');
+  // A form that says both is not clear, so it is not trusted either.
+  expect(none(`<h1>Change password</h1><form onsubmit="return false">${two}<button id="go">Sign in</button></form>`), 'mixed words');
+});
+
+check('words that only look like a change form do not turn a sign-in into one', () => {
+  const p = load(`<h1>Sign in</h1><form onsubmit="return false"><input id="u" type="text" name="user">
+    <input id="p" type="password"><a href="#r">Forgot your password? Reset password</a>
+    <label><input type="checkbox"> Remember me</label><button id="go">Sign in</button></form>`);
+  p.set('#u', 'alice'); p.set('#p', 'secret'); p.click('#go');
+  const o = p.got().find(x => x.t === 'offer');
+  expect(o && o.u === 'alice' && o.p === 'secret' && !('o' in o), 'got ' + JSON.stringify(p.got()));
+});
+
 // ---- HasPassword, as the page script now sees fields ----
 
 check('HasPassword: a password field in a shadow root, or shown as text, still counts', () => {
