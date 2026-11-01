@@ -38,10 +38,20 @@ public sealed partial class Win
     /// <summary>Starts the protection for a tab: its script, and the header changes. Called once, before the tab's first page.</summary>
     private async Task FpHook(Tab tab, CoreWebView2 core)
     {
+        FpEvents(tab, core);
+        await FpRegister(tab, core);
+    }
+
+    /// <summary>
+    /// The request side of the protection: the header changes. Apart from the page script
+    /// (FpRegister) so a window a page opens can have the script added first and this after
+    /// (win.popup.cs).
+    /// </summary>
+    private void FpEvents(Tab tab, CoreWebView2 core)
+    {
         // The request event is shared with the ad blocker, which adds the filter for every request
         // (AdsHook), so no filter is added here.
         core.WebResourceRequested += (s, e) => FpRequest(tab, e);
-        await FpRegister(tab, core);
     }
 
     /// <summary>Registers the page script again for every tab of this window.</summary>

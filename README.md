@@ -46,6 +46,7 @@ src/neat/
   win.cmd.cs        command bar: the box and its list of suggestions, arrow keys
   win.sess.cs       session: open tabs kept for the next start, closed tabs (Ctrl+Shift+T)
   win.full.cs       full screen (F11)
+  win.popup.cs      windows a page opens for itself (window.open, sign-in popups): the new tab is that window, so the popup can answer the page
   web/env.cs        app folders; points WebView2 at the bundled runtime
   web/tab.cs        one tab: its web view, title, address and favicon
   look/look.cs      window colour: turns the saved tint into the window gradient
