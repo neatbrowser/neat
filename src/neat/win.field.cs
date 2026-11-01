@@ -16,7 +16,8 @@ namespace neat;
 /// The rules, on top of those of win.fill.cs:
 ///   - The key for a saved login shows only on a page that has one, and only for a field the script calls
 ///     a login field (a user name or a password in use). A field where a password is being chosen
-///     gets a key that suggests one (win.suggest.cs), on any page.
+///     gets a key that suggests one (win.suggest.cs), on any page. A field for a one-time code gets a
+///     key when a saved login of the page has a code key (vault/totp.cs); the list shows only those logins.
 ///   - The list opens by itself only when the person pressed the pointer on the field (the script says
 ///     so, for a real press only) and the vault is already open. A shut vault is never asked about
 ///     because a field was clicked; the key still shows and asks when it is pressed.
@@ -53,7 +54,7 @@ public sealed partial class Win
         if (_fieldKind == "new")
             PasswordList(tab, at, true);
         else
-            _ = Guard(() => OpenFill(at), "opening the fill list at a field");
+            _ = Guard(() => OpenFill(at, _fieldKind == "otp"), "opening the fill list at a field");
     }
 
     /// <summary>The page says which field has the focus (or that none has). Only for the tab on show.</summary>
@@ -65,8 +66,10 @@ public sealed partial class Win
         var shown = _bubbleAnchored;
         var kind = JsonText(msg, "k");
 
-        // A login field needs a saved login on this page; a field for a new password does not.
-        if ((kind != "login" && kind != "new") || !Box(tab, msg, out var field) || (kind == "login" && !App.Vault.Has(origin)))
+        // A login field needs a saved login on this page, a code field a saved key for one; a field for a
+        // new password needs nothing.
+        var known = kind == "new" || (kind == "login" && App.Vault.Has(origin)) || (kind == "otp" && App.Vault.HasOtp(origin));
+        if (!known || !Box(tab, msg, kind == "otp" ? 20 : KeySize * 2, out var field))
         {
             HideField();
             return;
@@ -80,9 +83,11 @@ public sealed partial class Win
 
         _field = field;
         _fieldKind = kind;
-        ToolTipService.SetToolTip(fieldkey, kind == "new" ? "Suggest a password" : "Fill a saved login");
+        ToolTipService.SetToolTip(fieldkey, kind == "new" ? "Suggest a password" : kind == "otp" ? "Fill a one-time code" : "Fill a saved login");
         fieldkey.Margin = new Thickness(field.X + field.Width - KeySize - 6, field.Y + (field.Height - KeySize) / 2, 0, 0);
-        fieldkey.Visibility = Visibility.Visible;
+
+        // A box of a code split in digits is too small to carry the key: it only opens the list when clicked.
+        fieldkey.Visibility = field.Width >= KeySize * 2 ? Visibility.Visible : Visibility.Collapsed;
 
         // A shut vault is never asked about because a field was clicked (see above); a new password needs no vault.
         if (FieldAutoOpen && click && (kind == "new" || App.Vault.IsOpen))
@@ -104,9 +109,9 @@ public sealed partial class Win
 
     /// <summary>
     /// The field's box in window coordinates, from the page's own [x, y, width, height] in page pixels.
-    /// False when the numbers are not numbers, the box is too small for the key, or its middle is not in the page.
+    /// False when the numbers are not numbers, the box is narrower than <paramref name="least"/>, or its middle is not in the page.
     /// </summary>
-    private static bool Box(Tab tab, JsonElement msg, out Rect box)
+    private static bool Box(Tab tab, JsonElement msg, double least, out Rect box)
     {
         box = default;
 
@@ -138,7 +143,7 @@ public sealed partial class Win
         var y = v[1] * zoom;
 
         // Too small to carry the key, or its middle is outside the page.
-        if (w < KeySize * 2 || h < 18 || x + w / 2 < 0 || y + h / 2 < 0
+        if (w < least || h < 18 || x + w / 2 < 0 || y + h / 2 < 0
             || x + w / 2 > tab.View.ActualWidth || y + h / 2 > tab.View.ActualHeight)
             return false;
 

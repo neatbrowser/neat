@@ -85,7 +85,7 @@ public sealed partial class Win
 
     // ---- the list ----
 
-    private async Task OpenFill(Windows.Foundation.Rect? anchor = null)
+    private async Task OpenFill(Windows.Foundation.Rect? anchor = null, bool otp = false)
     {
         var tab = _cur;
         var core = tab?.View.CoreWebView2;
@@ -124,25 +124,25 @@ public sealed partial class Win
 
         if (!vault.IsOpen)
         {
-            AskFillUnlock(tab, anchor);
+            AskFillUnlock(tab, anchor, otp);
             return;
         }
 
-        ListLogins(tab, anchor);
+        ListLogins(tab, anchor, otp);
     }
 
     /// <summary>The logins saved for the page in <paramref name="tab"/>, to pick one from.</summary>
-    private void ListLogins(Tab tab, Windows.Foundation.Rect? anchor = null)
+    private void ListLogins(Tab tab, Windows.Foundation.Rect? anchor = null, bool otp = false)
     {
         var core = tab.View.CoreWebView2;
         var origin = core is null ? null : Origin.Of(core.Source);
         if (origin is null)
             return;
 
-        var logins = App.Vault.Find(origin).Where(l => !l.Damaged).Take(FillMax).ToList();
+        var logins = App.Vault.Find(origin).Where(l => !l.Damaged && (!otp || l.Otp)).Take(FillMax).ToList();
         if (logins.Count == 0)
         {
-            Bubble("No saved login for this site", string.Empty, TimeSpan.FromSeconds(3), ("OK", () => HideBubble()));
+            Bubble(otp ? "No one-time code key for this site" : "No saved login for this site", string.Empty, TimeSpan.FromSeconds(3), ("OK", () => HideBubble()));
             return;
         }
 
@@ -152,7 +152,7 @@ public sealed partial class Win
 
         panel.Children.Add(new TextBlock
         {
-            Text = "Fill a saved login",
+            Text = otp ? "Fill a one-time code" : "Fill a saved login",
             FontSize = 14,
             FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
         });
@@ -182,7 +182,7 @@ public sealed partial class Win
                 HorizontalAlignment = HorizontalAlignment.Stretch,
                 HorizontalContentAlignment = HorizontalAlignment.Left,
             };
-            b.Click += (s, e) => _ = Guard(() => FillWith(tab, id), "filling a login");
+            b.Click += (s, e) => _ = Guard(() => otp ? FillCode(tab, id) : FillWith(tab, id), "filling a login");
             panel.Children.Add(b);
         }
 
@@ -206,7 +206,7 @@ public sealed partial class Win
 
     // ---- unlocking a password vault ----
 
-    private void AskFillUnlock(Tab tab, Windows.Foundation.Rect? anchor = null)
+    private void AskFillUnlock(Tab tab, Windows.Foundation.Rect? anchor = null, bool otp = false)
     {
         var box = new PasswordBox { PlaceholderText = "NEAT password" };
         var message = new TextBlock { FontSize = 12, Opacity = 0.7, TextWrapping = TextWrapping.Wrap };
@@ -228,7 +228,7 @@ public sealed partial class Win
                 StartFillIdle();
 
                 if (_cur == tab)
-                    ListLogins(tab, anchor);
+                    ListLogins(tab, anchor, otp);
 
                 return;
             }
@@ -362,6 +362,75 @@ public sealed partial class Win
         catch (Exception)
         {
         }
+
+        Bubble(said, string.Empty, TimeSpan.FromSeconds(2.5));
+    }
+
+    // ---- one-time codes ----
+
+    /// <summary>Puts the one-time code of a saved login into the field that has the focus.</summary>
+    private async Task FillCode(Tab tab, Guid id)
+    {
+        HideBubble();
+
+        var core = tab.View.CoreWebView2;
+        if (core is null || _cur != tab)
+            return;
+
+        var page = core.Source;
+        var origin = Origin.Of(page);
+        if (origin is null)
+            return;
+
+        var code = App.Vault.Code(id, page, DateTimeOffset.UtcNow);
+
+        // A code that ends in a moment may be refused by the time the person sends it: take the next one.
+        if (code is { SecondsLeft: < 3 })
+        {
+            await Task.Delay(TimeSpan.FromSeconds(code.SecondsLeft) + TimeSpan.FromMilliseconds(300));
+
+            if (_cur != tab)
+                return;
+
+            code = App.Vault.Code(id, page, DateTimeOffset.UtcNow);
+        }
+
+        if (code is null)
+        {
+            Bubble("Could not fill", "That login has no code for the page that is open now.", TimeSpan.FromSeconds(4), ("OK", () => HideBubble()));
+            return;
+        }
+
+        _fillLast = DateTime.UtcNow;
+
+        string answer;
+        try
+        {
+            answer = await core.ExecuteScriptAsync(OtpScript.For(origin, code.Code));
+        }
+        catch (Exception ex)
+        {
+            // The kind only: the script text holds the code.
+            Log.Write("pass", "filling a code failed (" + ex.GetType().Name + ")");
+            Bubble("Could not fill", "The page did not accept it.", TimeSpan.FromSeconds(4), ("OK", () => HideBubble()));
+            return;
+        }
+
+        try
+        {
+            tab.View.Focus(FocusState.Programmatic);
+        }
+        catch (Exception)
+        {
+        }
+
+        var said = answer.Trim('"') switch
+        {
+            "otp" or "otp+boxes" => "Code filled",
+            "none" => "Click the code field first.",
+            "origin" => "The page changed, so nothing was filled.",
+            _ => "Could not fill this page.",
+        };
 
         Bubble(said, string.Empty, TimeSpan.FromSeconds(2.5));
     }

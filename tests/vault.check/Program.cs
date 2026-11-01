@@ -75,6 +75,8 @@ internal static class Program
         Run("a server that refuses a login is told apart from background calls", LoginNetRefuses);
         Run("a refused login is dropped, a good answer proves nothing", CaptureAnswered);
         Run("a suggested password has every kind of character and the right length", PasswordGenerated);
+        Run("one-time codes match the RFC 6238 test values, and odd keys are refused", TotpCodes);
+        Run("a one-time code key is sealed, follows its entry, and gives a code only to its own origin", OtpKeys);
         Run("a site can be taken off the never list", NeverRemove);
         Run("the vault code never logs", NoLogging);
         Run("the real number of PBKDF2 rounds works", RealRounds);
@@ -1065,6 +1067,91 @@ internal static class Program
         capture.Hold(other, "https://example.com", "a", "b");
         capture.Clear();
         Expect(!capture.Holds(tab) && !capture.Holds(other), "clear forgets all");
+    }
+
+    private static void TotpCodes()
+    {
+        const string key1 = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"; // "12345678901234567890"
+        string Eight(string algorithm, string key, long at)
+        {
+            var t = Totp.Parse("otpauth://totp/x?secret=" + key + "&digits=8&algorithm=" + algorithm) ?? throw new Exception("not parsed");
+            return t.Code(DateTimeOffset.FromUnixTimeSeconds(at));
+        }
+
+        // The test values of RFC 6238, appendix B (8 digits; one key per algorithm).
+        Expect(Eight("SHA1", key1, 59) == "94287082", "SHA1 at 59");
+        Expect(Eight("SHA1", key1, 1111111109) == "07081804", "SHA1 keeps a leading zero");
+        Expect(Eight("SHA1", key1, 1111111111) == "14050471", "SHA1 at 1111111111");
+        Expect(Eight("SHA1", key1, 1234567890) == "89005924", "SHA1 at 1234567890");
+        Expect(Eight("SHA1", key1, 2000000000) == "69279037", "SHA1 at 2000000000");
+        Expect(Eight("SHA1", key1, 20000000000) == "65353130", "SHA1 at 20000000000");
+        Expect(Eight("SHA256", Totp.ToBase32(Encoding.ASCII.GetBytes("12345678901234567890123456789012")), 59) == "46119246", "SHA256 at 59");
+        Expect(Eight("SHA512", Totp.ToBase32(Encoding.ASCII.GetBytes("1234567890123456789012345678901234567890123456789012345678901234")), 59) == "90693936", "SHA512 at 59");
+
+        // A plain key as a site shows it: any case, in groups, with padding; six digits and thirty seconds.
+        var plain = Totp.Parse("gezd gnbv-gy3t qojq gezd gnbv gy3t qojq====") ?? throw new Exception("plain key");
+        Expect(plain.Digits == 6 && plain.Period == 30 && plain.Algorithm == "SHA1", "defaults");
+        Expect(plain.Code(DateTimeOffset.FromUnixTimeSeconds(59)) == "287082", "six digits are the last six");
+        Expect(plain.SecondsLeft(DateTimeOffset.FromUnixTimeSeconds(59)) == 1 && plain.SecondsLeft(DateTimeOffset.FromUnixTimeSeconds(60)) == 30, "seconds left");
+
+        // What is kept reads back as the same key with the same settings.
+        var again = Totp.Parse(Totp.Parse("otpauth://totp/Site:me%40x.com?secret=" + key1 + "&issuer=Site&digits=8&period=60&algorithm=sha256")!.Canonical());
+        Expect(again is not null && again.Digits == 8 && again.Period == 60 && again.Algorithm == "SHA256", "settings survive the canonical text");
+
+        // Not keys.
+        foreach (var bad in new[]
+        {
+            "", "   ", "not a key!", "GEZDGNBV", "otpauth://hotp/x?secret=" + key1 + "&counter=1", "otpauth://totp/x",
+            "otpauth://totp/x?secret=" + key1 + "&digits=5", "otpauth://totp/x?secret=" + key1 + "&period=5",
+            "otpauth://totp/x?secret=" + key1 + "&algorithm=MD5", "otpauth://totp/x?secret=" + new string('A', 400),
+        })
+        {
+            Expect(Totp.Parse(bad) is null, "refused: " + bad);
+        }
+    }
+
+    private static void OtpKeys()
+    {
+        const string key = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";
+        var at = DateTimeOffset.FromUnixTimeSeconds(59);
+
+        var path = TempFile();
+        var v = NewVault(path);
+        v.Open();
+        var id = v.Add("https://a.example", "u", "p");
+
+        Expect(!v.HasOtp("https://a.example") && !v.List().Single().Otp, "no key at first");
+        Expect(v.Code(id, "https://a.example", at) is null, "no code without a key");
+        ExpectThrows<ArgumentException>(() => v.SetOtp(id, "not a key!"), "a bad key is refused, not kept");
+        Expect(!v.HasOtp("https://a.example"), "a refused key changed nothing");
+        Expect(!v.SetOtp(Guid.NewGuid(), key), "unknown id");
+
+        Expect(v.SetOtp(id, key), "set the key");
+        Expect(v.HasOtp("https://a.example/some/page") && v.List().Single().Otp, "the entry has a key");
+        Expect(!File.ReadAllText(path).Contains("GEZDGNBV", StringComparison.OrdinalIgnoreCase), "the key is not in the file in the clear");
+
+        var code = v.Code(id, "https://a.example/login", at);
+        Expect(code is not null && code.Code == "287082" && code.SecondsLeft == 1, "the code and the seconds left");
+        Expect(v.Code(id, "https://b.example", at) is null, "another origin gets nothing");
+        Expect(v.Code(id, "http://a.example", at) is null, "the http version gets nothing");
+        Expect(RevealText(v, id) == "p", "the password is untouched");
+
+        // It follows the entry: an edit with a new site, and a reopened file.
+        Expect(v.Update(id, "https://c.example", "u2", null), "update with a new site");
+        Expect(v.Code(id, "https://c.example", at)?.Code == "287082", "the key moved with the entry");
+        var reopened = NewVault(path);
+        reopened.Open();
+        Expect(reopened.Code(id, "https://c.example", at)?.Code == "287082", "the key was written");
+
+        // And it survives a change of how the vault is protected.
+        Expect(v.UsePassword("correct horse battery".AsSpan()) == VaultResult.Ok, "protect with a password");
+        Expect(v.Code(id, "https://c.example", at)?.Code == "287082", "the key was sealed again");
+        Expect(v.UseDpapi() == VaultResult.Ok, "back to Windows protection");
+        Expect(v.Code(id, "https://c.example", at)?.Code == "287082", "the key was sealed again, twice");
+
+        // A key can be taken away.
+        Expect(v.SetOtp(id, null), "clear the key");
+        Expect(!v.HasOtp("https://c.example") && v.Code(id, "https://c.example", at) is null, "no key left");
     }
 
     private static void PasswordGenerated()

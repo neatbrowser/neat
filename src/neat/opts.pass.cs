@@ -434,7 +434,7 @@ public sealed partial class Opts
 
         var second = it.Damaged
             ? "This entry does not check out: it was changed outside NEAT."
-            : who + Sep + (seen ? "password: " + _shownText : Dots);
+            : who + Sep + (seen ? "password: " + _shownText : Dots) + (it.Otp ? Sep + "one-time code" : string.Empty);
 
         // Without a way to prove who is asking, nothing secret is offered.
         var usable = _prot != Protection.None && !it.Damaged;

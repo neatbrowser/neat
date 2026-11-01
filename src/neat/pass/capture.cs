@@ -422,12 +422,18 @@ internal static class CaptureScript
           // draws the key and the list of saved logins over the page, so the page can neither read
           // nor fake them, and nothing here fills anything. Only real focus and pointer events count.
 
+          // The field takes a one-time code (the 6 digits of an authenticator app): the browser's own mark for
+          // it, or what the field says about itself.
+          const RE_OTP = /\b(otp|totp|2fa|mfa|authenticator|one[ -]?time|two[ -]?factor|verification code|authentication code|security code|sms code|[68][ -]?digit)\b|mã xác (minh|thực)|mã otp|xác thực hai/;
+          const wantsCode = el => (el.getAttribute('autocomplete') || '').toLowerCase() === 'one-time-code' || RE_OTP.test(labelsOf(el));
+
           // A field the key may sit at: shown, writable, not left out by a site rule, big enough to carry it.
           const usableField = el => !!el && el.tagName === 'INPUT' && !el.readOnly && !el.disabled &&
-            (isPw(el) || TEXTY.has(el.type)) && visible(el) &&
+            (isPw(el) || TEXTY.has(el.type) || el.type === 'number') && visible(el) &&
             !rulesNow().exclude.some(s => closestDeep(el, s));
 
-          // 'login' (a user name or password to fill in), 'new' (a password being chosen), or '' (no key).
+          // 'login' (a user name or password to fill in), 'new' (a password being chosen), 'otp' (a one-time
+          // code), or '' (no key).
           const kindOf = el => {
             if (!usableField(el)) return '';
             const box = closestDeep(el, 'form') || document;
@@ -437,6 +443,8 @@ internal static class CaptureScript
               if (role === 'cur') return 'login';
               return classify(box) === 'register' ? 'new' : 'login';
             }
+            if (wantsCode(el)) return 'otp';
+            if (el.type === 'number') return '';
             if (SEARCH.test(attrs(el))) return '';
             // A user name field: no key in a sign-up or change-password form.
             const form = classify(box);
@@ -468,7 +476,9 @@ internal static class CaptureScript
           const report = (el, click) => {
             let k = el ? kindOf(el) : '';
             const r = k ? rectOf(el) : null;
-            if (r && (r[2] < 60 || r[3] < 18) && document.documentElement.getBoundingClientRect().width > 0) k = '';
+            // Too small to carry a key (a box of a code split in digits is small, and may still open the list).
+            const least = k === 'otp' ? 20 : 60;
+            if (r && (r[2] < least || r[3] < 18) && document.documentElement.getBoundingClientRect().width > 0) k = '';
             at = k ? el : null;
             rectNow = k ? JSON.stringify(r) : '';
             const o = k ? { t: 'field', k: k, r: r, v: window.innerWidth } : { t: 'field', r: null };

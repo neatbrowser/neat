@@ -641,6 +641,23 @@ public sealed class Vault : IDisposable
             next.User = Sealed(key, id, origin, "user", user);
             next.Changed = DateTimeOffset.UtcNow;
 
+            // The key of the one-time codes goes with the entry, sealed again for its (maybe new) site.
+            if (!string.IsNullOrEmpty(old.Otp))
+            {
+                var otp = Open(key, old, "otp");
+                if (otp is null)
+                    return false;
+
+                try
+                {
+                    next.Otp = Sealed(key, id, origin, "otp", otp);
+                }
+                finally
+                {
+                    Seal.Wipe(otp);
+                }
+            }
+
             if (password is not null)
             {
                 next.Pass = Sealed(key, id, origin, "pass", password);
@@ -674,6 +691,96 @@ public sealed class Vault : IDisposable
             }
 
             return true;
+        }
+    }
+
+    /// <summary>
+    /// Sets (or, with null or empty text, clears) the key of the one-time codes of an entry. The text
+    /// is a key as a site shows it, or the otpauth address of its QR code (see <see cref="Totp"/>).
+    /// False when there is no such entry. Throws ArgumentException for text that is not a key, so a
+    /// mistyped key is told to the person instead of being kept.
+    /// </summary>
+    public bool SetOtp(Guid id, string? text)
+    {
+        string? canonical = null;
+        if (!string.IsNullOrWhiteSpace(text))
+        {
+            canonical = Totp.Parse(text)?.Canonical()
+                ?? throw new ArgumentException("That is not a one-time code key.", nameof(text));
+        }
+
+        lock (_gate)
+        {
+            var key = Key();
+            var old = Find(id);
+            if (old is null)
+                return false;
+
+            var next = old.Copy();
+            next.Otp = canonical is null ? null : Sealed(key, id, old.Site, "otp", canonical);
+            next.Changed = DateTimeOffset.UtcNow;
+
+            var index = _file!.Logins.IndexOf(old);
+            _file.Logins[index] = next;
+            try
+            {
+                Write();
+            }
+            catch
+            {
+                _file.Logins[index] = old;
+                throw;
+            }
+
+            return true;
+        }
+    }
+
+    /// <summary>Whether any entry of the page's origin has a one-time code key.</summary>
+    public bool HasOtp(string site)
+    {
+        var origin = Origin.Of(site);
+        if (origin is null)
+            return false;
+
+        lock (_gate)
+        {
+            return _file is not null && _file.Logins.Any(r => r.Site == origin && !string.IsNullOrEmpty(r.Otp));
+        }
+    }
+
+    /// <summary>
+    /// The one-time code of an entry for the moment <paramref name="now"/>, and only if the page's origin is
+    /// exactly the entry's (the same rule as <see cref="Fill"/>, for the same reason). Like a fill, it needs no
+    /// sign-in: the code goes into the page the person is looking at. Null when there is no such entry, it has
+    /// no key, it is for another origin, or it does not check out.
+    /// </summary>
+    public OtpCode? Code(Guid id, string pageUrl, DateTimeOffset now)
+    {
+        var origin = Origin.Of(pageUrl);
+        if (origin is null)
+            return null;
+
+        lock (_gate)
+        {
+            var key = Key();
+            var row = Find(id);
+            if (row is null || row.Site != origin || string.IsNullOrEmpty(row.Otp))
+                return null;
+
+            var plain = Open(key, row, "otp");
+            if (plain is null)
+                return null;
+
+            try
+            {
+                var totp = Totp.Parse(Encoding.UTF8.GetString(plain));
+                return totp is null ? null : new OtpCode(totp.Code(now), totp.SecondsLeft(now));
+            }
+            finally
+            {
+                Seal.Wipe(plain);
+            }
         }
     }
 
@@ -944,20 +1051,25 @@ public sealed class Vault : IDisposable
 
         var user = Open(old, row, "user");
         var pass = Open(old, row, "pass");
+        var otp = string.IsNullOrEmpty(row.Otp) ? null : Open(old, row, "otp");
         try
         {
-            if (user is null || pass is null)
+            if (user is null || pass is null || (!string.IsNullOrEmpty(row.Otp) && otp is null))
                 return null;
 
             var again = row.Copy();
             again.User = Sealed(fresh, id, row.Site, "user", user);
             again.Pass = Sealed(fresh, id, row.Site, "pass", pass);
+            if (otp is not null)
+                again.Otp = Sealed(fresh, id, row.Site, "otp", otp);
+
             return again;
         }
         finally
         {
             Seal.Wipe(user);
             Seal.Wipe(pass);
+            Seal.Wipe(otp);
         }
     }
 
@@ -974,7 +1086,8 @@ public sealed class Vault : IDisposable
                 user is null ? string.Empty : Encoding.UTF8.GetString(user),
                 row.Created,
                 row.Changed,
-                !ok);
+                !ok,
+                !string.IsNullOrEmpty(row.Otp));
         }
         finally
         {
@@ -1008,7 +1121,7 @@ public sealed class Vault : IDisposable
         if (!Guid.TryParse(row.Id, out var id))
             return null;
 
-        var blob = FromBase64(field == "user" ? row.User : row.Pass);
+        var blob = FromBase64(field switch { "user" => row.User, "otp" => row.Otp, _ => row.Pass });
         return blob is null ? null : Seal.Decrypt(key, blob, Aad.Field(id, row.Site, field));
     }
 

@@ -75,7 +75,11 @@ public sealed record LoginInfo(
     string User,
     DateTimeOffset Created,
     DateTimeOffset Changed,
-    bool Damaged);
+    bool Damaged,
+    bool Otp = false);
+
+/// <summary>A one-time code for an entry and how many seconds it still lasts. Not a secret for long, but not logged either.</summary>
+public sealed record OtpCode(string Code, int SecondsLeft);
 
 /// <summary>
 /// What <see cref="Vault.Lookup"/> found for a login seen on a page: whether the same user name is
@@ -216,6 +220,13 @@ internal sealed class VaultRow
 
     /// <summary>Sealed. Base64.</summary>
     public string Pass { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Sealed. Base64. The key of the one-time codes of this login (see <see cref="Totp"/>), or null
+    /// when it has none. Optional on purpose: a file without it is a valid version 1 file, and an
+    /// entry is sealed with it only once a key is set.
+    /// </summary>
+    public string? Otp { get; set; }
 
     public DateTimeOffset Created { get; set; }
 

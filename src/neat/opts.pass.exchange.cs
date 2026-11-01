@@ -60,6 +60,11 @@ public sealed partial class Opts
         var user = new TextBox { Width = 260, Text = it.User };
         var pass = new PasswordBox { Width = 260 };
 
+        // The key of the one-time codes: a secret like the password, so it is typed into a box that hides it,
+        // and never shown again. An empty box keeps what is saved.
+        var otp = new PasswordBox { Width = 260 };
+        var drop = new CheckBox { Content = "Remove the saved code key", Visibility = it.Otp ? Visibility.Visible : Visibility.Collapsed };
+
         async Task Save()
         {
             var typed = site.Text.Trim();
@@ -71,12 +76,24 @@ public sealed partial class Opts
                 return;
             }
 
+            var key = otp.Password.Trim();
+            if (key.Length > 0 && drop.IsChecked != true && Totp.Parse(key) is null)
+            {
+                Fail("That is not a one-time code key. Paste the key the site shows (letters and digits), or the otpauth:// address behind its QR code.");
+                return;
+            }
+
             // An empty password box keeps the saved password.
             if (!App.Vault.Update(it.Id, origin, user.Text.Trim(), pass.Password.Length == 0 ? null : pass.Password))
             {
                 Fail("That login could not be changed. It may have been deleted, or changed outside NEAT.");
                 return;
             }
+
+            if (drop.IsChecked == true)
+                App.Vault.SetOtp(it.Id, null);
+            else if (key.Length > 0)
+                App.Vault.SetOtp(it.Id, key);
 
             CloseTask();
             Say("Saved.");
@@ -90,6 +107,9 @@ public sealed partial class Opts
                 Block.Row(_skin, "Web site", null, site),
                 Block.Row(_skin, "User name", null, user),
                 Block.Row(_skin, "Password", "Leave empty to keep the saved password.", pass),
+                Block.Row(_skin, "One-time code key",
+                    "For sites with two-step sign-in: the key the site shows when you set up an authenticator app. Leave empty to keep what is saved.", otp),
+                drop,
             },
             Btn("Save", Save),
             Btn("Cancel", () => Start(CloseTask)));

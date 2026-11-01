@@ -943,6 +943,42 @@ check('clicking elsewhere in the page takes the key away, a page that lost the f
   expect(f.length === 2 && f[1].r === null, 'not told after a click elsewhere: ' + JSON.stringify(f));
 });
 
+check('a field for a one-time code gets an otp key, small boxes of a split code too', () => {
+  const p = load(`<form onsubmit="return false"><input id="a" type="text" autocomplete="one-time-code">
+    <input id="b" type="text" name="otp_code"><input id="c" type="number" placeholder="6-digit code">
+    <input id="d" type="text" aria-label="Verification code"><input id="e" type="text" name="promo_code"></form>`);
+  for (const id of ['a', 'b', 'c', 'd']) {
+    boxed(p, '#' + id, [0, 0, 200, 30]);
+    p.focus('#' + id);
+    const f = fieldsOf(p);
+    expect(f.length && f[f.length - 1].k === 'otp', id + ': ' + JSON.stringify(f));
+    p.blur('#' + id);
+  }
+  const before = fieldsOf(p).length;
+  boxed(p, '#e', [0, 0, 200, 30]);
+  p.focus('#e');
+  expect(fieldsOf(p).slice(before).every(x => x.r === null), 'a promo code field got a key');
+
+  const q = load('<input id="d1" type="text" name="digit1" autocomplete="one-time-code" maxlength="1">');
+  boxed(q, '#d1', [0, 0, 36, 40]);
+  q.focus('#d1');
+  expect(fieldsOf(q).length === 1 && fieldsOf(q)[0].k === 'otp', 'a small box of a split code: ' + JSON.stringify(fieldsOf(q)));
+  const tiny = load('<input id="d1" type="text" name="digit1" autocomplete="one-time-code" maxlength="1">');
+  boxed(tiny, '#d1', [0, 0, 10, 40]);
+  tiny.win.document.documentElement.getBoundingClientRect = () => ({ left: 0, top: 0, width: 800, height: 600 });
+  tiny.focus('#d1');
+  expect(fieldsOf(tiny).length === 0, 'a box too small even for that got a key');
+});
+
+check('a number field that is not a code gets nothing, and a code field is not taken for a user name', () => {
+  const p = load('<form onsubmit="return false"><input id="n" type="number" name="age"><input id="u" type="text" name="verification_code"><input id="p" type="password"></form>');
+  boxed(p, '#n', [0, 0, 200, 30]); boxed(p, '#u', [0, 0, 200, 30]);
+  p.focus('#n');
+  expect(fieldsOf(p).length === 0, 'a number field got a key');
+  p.focus('#u');
+  expect(fieldsOf(p).length === 1 && fieldsOf(p)[0].k === 'otp', JSON.stringify(fieldsOf(p)));
+});
+
 (async () => {
   for (const run of later) await run();
   console.log('\n' + (ran - failed) + ' of ' + ran + ' checks passed.');
