@@ -46,7 +46,6 @@ src/neat/
   win.cmd.cs        command bar: the box and its list of suggestions, arrow keys
   win.sess.cs       session: open tabs kept for the next start, closed tabs (Ctrl+Shift+T)
   win.full.cs       full screen (F11)
-  win.popup.cs      windows a page opens for itself (window.open, sign-in popups): the new tab is that window, so the popup can answer the page
   web/env.cs        app folders; points WebView2 at the bundled runtime
   web/tab.cs        one tab: its web view, title, address and favicon
   look/look.cs      window colour: turns the saved tint into the window gradient
@@ -76,6 +75,7 @@ src/neat/
   vault/capture.cs  a login a page just showed, held until it is known whether the login worked
   vault/loginnet.cs what the network says about a held login: a server that refuses it (401, 403, ...) drops it at once
   vault/totp.cs     one-time codes (RFC 6238) from the key a site gives for two-step sign-in; no network needed
+  vault/items.cs    saved cards and identities (sealed like a login, tied to no site) and the rules that clean what is typed
   vault/never.cs    the sites the person said never to offer to save a password for (kept in settings.json)
   pass/capture.cs   the two page scripts of the save-password bubble (JavaScript in C# strings)
   pass/rules.cs     reads pass/rules.json and gives it to that script (format described at the top of the file)
@@ -84,13 +84,16 @@ src/neat/
   win.fill.cs       the key button in the address chip and the list of logins to fill; runs the fill script
   win.field.cs      the key drawn over a login field of the page, from where the page script says the field is
   win.suggest.cs    the strong-password suggestion at a field where a new password is chosen
+  win.items.cs      the list of saved cards or identities at a card or contact field, and filling the pick
   pass/fill.cs      the script that fills a login into a page (JavaScript in a C# string)
   pass/suggest.cs   the strong-password maker, and the script that puts a chosen password into the new-password fields
   pass/otp.cs       the script that puts a one-time code into the field that has the focus (or into a code split in boxes)
+  pass/form.cs      the script that fills a saved card or identity into the form that holds the focus
   vault/lookalike.cs how an address is shown before filling, and the warning for fake-looking ones
   vault/csv.cs      reading and writing CSV, the format other browsers export passwords in
   vault/exchange.cs turns another browser's password export into logins, and logins into one
   opts.pass.exchange.cs Settings > Passwords, third part: never-save list, editing a login, import and export
+  opts.pass.items.cs Settings > Passwords, fourth part: saved cards and identities
   pass/hello.cs     Windows Hello, behind the gate's IHello
   pass/clip.cs      SecretClip: copy a password, not in clipboard history or cloud, cleared after 30 seconds
   opts.pass.cs      Settings > Passwords: protection, saved logins, show / copy / delete

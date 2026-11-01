@@ -3,7 +3,7 @@
   "private": true,
   "description": "Self-check of the page scripts of the password vault (src/neat/pass/capture.cs and fill.cs). Run: npm ci, then npm test",
   "scripts": {
-    "test": "node check.js && node check-fill.js && node check-suggest.js && node check-otp.js"
+    "test": "node check.js && node check-fill.js && node check-suggest.js && node check-otp.js && node check-form.js"
   },
   "devDependencies": {
     "jsdom": "^30.1.3"

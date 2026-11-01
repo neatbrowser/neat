@@ -77,6 +77,8 @@ internal static class Program
         Run("a suggested password has every kind of character and the right length", PasswordGenerated);
         Run("one-time codes match the RFC 6238 test values, and odd keys are refused", TotpCodes);
         Run("a one-time code key is sealed, follows its entry, and gives a code only to its own origin", OtpKeys);
+        Run("a card or identity is cleaned into what is kept, with a sentence for what is wrong", ItemCleaning);
+        Run("cards and identities are sealed, can be changed, and survive a change of protection", SavedItems);
         Run("a site can be taken off the never list", NeverRemove);
         Run("the vault code never logs", NoLogging);
         Run("the real number of PBKDF2 rounds works", RealRounds);
@@ -1152,6 +1154,94 @@ internal static class Program
         // A key can be taken away.
         Expect(v.SetOtp(id, null), "clear the key");
         Expect(!v.HasOtp("https://c.example") && v.Code(id, "https://c.example", at) is null, "no key left");
+    }
+
+    private static Dictionary<string, string> Fields(params string[] pairs)
+    {
+        var d = new Dictionary<string, string>();
+        for (var i = 0; i < pairs.Length; i += 2)
+            d[pairs[i]] = pairs[i + 1];
+
+        return d;
+    }
+
+    private static void ItemCleaning()
+    {
+        var card = ItemRules.Clean(ItemKind.Card, Fields("number", "4111 1111-1111 1111", "expiry", "8/2027", "cvc", " 123 ", "holder", "  A. Nguyen ", "bogus", "x"));
+        Expect(card["number"] == "4111111111111111" && card["expiry"] == "08/27" && card["cvc"] == "123" && card["holder"] == "A. Nguyen", "a card is cleaned");
+        Expect(!card.ContainsKey("bogus"), "an unknown field is left out");
+        Expect(card["label"] == "Card \u2022\u2022\u2022\u2022 1111", "the label is made from the number");
+        Expect(ItemRules.Summary(ItemKind.Card, card).Contains("1111") && !ItemRules.Summary(ItemKind.Card, card).Contains("4111"), "the summary shows only the last four digits");
+
+        foreach (var (typed, want) in new (string, string?)[] { ("08/27", "08/27"), ("0827", "08/27"), ("082027", "08/27"), ("8-27", "08/27"), ("12.2030", "12/30"), ("13/27", null), ("00/27", null), ("08/2", null), ("ab/cd", null), ("", null) })
+            Expect(ItemRules.Expiry(typed) == want, "expiry " + typed);
+
+        foreach (var bad in new[]
+        {
+            Fields("number", "1234"), Fields("number", "4111 1111 abcd 1111"), Fields("expiry", "08/27"),
+            Fields("number", "4111111111111111", "expiry", "99/99"), Fields("number", "4111111111111111", "cvc", "12"),
+            Fields("number", "4111111111111111", "cvc", "12a"), Fields("number", "4111111111111111", "holder", new string('x', 300)),
+        })
+        {
+            ExpectThrows<ArgumentException>(() => ItemRules.Clean(ItemKind.Card, bad), "a bad card is refused");
+        }
+
+        var who = ItemRules.Clean(ItemKind.Identity, Fields("first", "An", "last", "Nguyen", "city", "Hue", "street", "  "));
+        Expect(who["label"] == "An Nguyen" && !who.ContainsKey("street") && ItemRules.Summary(ItemKind.Identity, who) == "An Nguyen  \u00B7  Hue", "an identity is cleaned");
+        ExpectThrows<ArgumentException>(() => ItemRules.Clean(ItemKind.Identity, Fields("label", "Empty")), "an identity needs a field");
+        ExpectThrows<ArgumentException>(() => ItemRules.Clean("login", Fields("first", "x")), "not a kind of item");
+    }
+
+    private static void SavedItems()
+    {
+        var path = TempFile();
+        var v = NewVault(path);
+        v.Open();
+
+        var card = v.AddItem(ItemKind.Card, Fields("number", "4111 1111 1111 1111", "expiry", "08/27", "cvc", "123", "holder", "A Nguyen", "label", "Visa"));
+        var who = v.AddItem(ItemKind.Identity, Fields("first", "An", "last", "Nguyen", "email", "an@example.com"));
+
+        Expect(v.Items(ItemKind.Card).Single().Label == "Visa" && v.Items(ItemKind.Identity).Single().Id == who, "listed by kind");
+        Expect(v.HasItems(ItemKind.Card) && v.HasItems(ItemKind.Identity) && !NewVault(TempFile()).HasItems(ItemKind.Card), "has tells whether any is saved");
+        Expect(!v.Items(ItemKind.Card).Single().Damaged && v.Items(ItemKind.Card).Single().Summary.Contains("1111"), "the summary");
+
+        var text = File.ReadAllText(path);
+        Expect(!text.Contains("4111") && !text.Contains("Nguyen") && !text.Contains("an@example.com"), "nothing of an item is in the file in the clear");
+
+        var fill = v.FillItem(card, ItemKind.Card) ?? throw new Exception("no fill");
+        Expect(fill["number"] == "4111111111111111" && fill["cvc"] == "123", "the fields come back");
+        Expect(v.FillItem(card, ItemKind.Identity) is null, "an item of another kind is not handed out");
+        Expect(v.FillItem(Guid.NewGuid(), ItemKind.Card) is null, "unknown id");
+        Expect(v.ReadItem(card, Good)?["holder"] == "A Nguyen", "read behind the gate");
+        var spent = new Access(TimeSpan.FromMinutes(1));
+        spent.Revoke();
+        ExpectThrows<UnauthorizedAccessException>(() => v.ReadItem(card, spent), "a read without a sign-in is refused");
+
+        Expect(v.UpdateItem(card, Fields("number", "5555 4444 3333 1111", "label", "Master")), "update");
+        Expect(v.FillItem(card, ItemKind.Card)!["number"] == "5555444433331111" && !v.FillItem(card, ItemKind.Card)!.ContainsKey("cvc"), "fields are replaced, not merged");
+        ExpectThrows<ArgumentException>(() => v.UpdateItem(card, Fields("number", "12")), "a bad update is refused");
+        Expect(v.FillItem(card, ItemKind.Card)!["number"] == "5555444433331111", "a refused update changed nothing");
+
+        // Reopened, and sealed again with a new key when the protection changes, both ways.
+        var reopened = NewVault(path);
+        reopened.Open();
+        Expect(reopened.FillItem(card, ItemKind.Card)!["label"] == "Master", "written to the file");
+        Expect(v.UsePassword("correct horse battery".AsSpan()) == VaultResult.Ok, "protect with a password");
+        Expect(v.FillItem(card, ItemKind.Card)!["number"] == "5555444433331111" && v.FillItem(who, ItemKind.Identity)!["first"] == "An", "sealed again");
+        Expect(v.UseDpapi() == VaultResult.Ok && v.FillItem(card, ItemKind.Card)!["number"] == "5555444433331111", "sealed again, twice");
+
+        // A file made before items existed still opens.
+        var old = TempFile();
+        var fresh = NewVault(old);
+        fresh.Open();
+        var json = Read(old);
+        json.Remove("Items");
+        Save(old, json);
+        var legacy = NewVault(old);
+        Expect(legacy.Open() == OpenResult.Ready && legacy.Items(ItemKind.Card).Count == 0, "no list of items is fine");
+        Expect(legacy.AddItem(ItemKind.Identity, Fields("first", "x")) != Guid.Empty, "and one can be added");
+
+        Expect(v.RemoveItem(card) && !v.RemoveItem(card) && v.Items(ItemKind.Card).Count == 0, "remove");
     }
 
     private static void PasswordGenerated()

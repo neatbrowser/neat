@@ -35,7 +35,7 @@ namespace neat;
 /// The operations that make a PBKDF2 key take a few tenths of a second: call them from a
 /// background task, not from the UI thread. All methods are safe to call from several threads.
 /// </summary>
-public sealed class Vault : IDisposable
+public sealed partial class Vault : IDisposable
 {
     /// <summary>The version of the file layout this code writes.</summary>
     public const int FormatVersion = 1;
@@ -156,6 +156,9 @@ public sealed class Vault : IDisposable
 
             if (file is null || file.Version < 1 || file.Logins is null)
                 return OpenResult.Unreadable;
+
+            // Files made before cards and identities were added have no such list.
+            file.Items ??= new();
 
             if (file.Version > FormatVersion)
                 return OpenResult.TooNew;
@@ -992,6 +995,20 @@ public sealed class Vault : IDisposable
             rows.Add(again);
         }
 
+        // Cards and identities are sealed with the same key, so they are sealed again with the new one too.
+        var items = new List<VaultItemRow>(file.Items.Count);
+        foreach (var row in file.Items)
+        {
+            var again = ResealItem(row, old, fresh);
+            if (again is null)
+            {
+                Seal.Wipe(fresh);
+                return VaultResult.Damaged;
+            }
+
+            items.Add(again);
+        }
+
         string mode;
         string wrapped;
         string? salt = null;
@@ -1019,13 +1036,14 @@ public sealed class Vault : IDisposable
             }
         }
 
-        var before = (file.Mode, file.Key, file.Salt, file.Iterations, file.Logins);
+        var before = (file.Mode, file.Key, file.Salt, file.Iterations, file.Logins, file.Items);
 
         file.Mode = mode;
         file.Key = wrapped;
         file.Salt = salt;
         file.Iterations = iterations;
         file.Logins = rows;
+        file.Items = items;
 
         try
         {
@@ -1033,7 +1051,7 @@ public sealed class Vault : IDisposable
         }
         catch
         {
-            (file.Mode, file.Key, file.Salt, file.Iterations, file.Logins) = before;
+            (file.Mode, file.Key, file.Salt, file.Iterations, file.Logins, file.Items) = before;
             Seal.Wipe(fresh);
             throw;
         }

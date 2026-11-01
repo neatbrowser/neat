@@ -18,6 +18,7 @@ namespace neat;
 ///     a login field (a user name or a password in use). A field where a password is being chosen
 ///     gets a key that suggests one (win.suggest.cs), on any page. A field for a one-time code gets a
 ///     key when a saved login of the page has a code key (vault/totp.cs); the list shows only those logins.
+///     Card and contact fields get a key when a card or an identity is saved (win.items.cs).
 ///   - The list opens by itself only when the person pressed the pointer on the field (the script says
 ///     so, for a real press only) and the vault is already open. A shut vault is never asked about
 ///     because a field was clicked; the key still shows and asks when it is pressed.
@@ -54,7 +55,7 @@ public sealed partial class Win
         if (_fieldKind == "new")
             PasswordList(tab, at, true);
         else
-            _ = Guard(() => OpenFill(at, _fieldKind == "otp"), "opening the fill list at a field");
+            _ = Guard(() => OpenFill(at, _fieldKind), "opening the fill list at a field");
     }
 
     /// <summary>The page says which field has the focus (or that none has). Only for the tab on show.</summary>
@@ -68,7 +69,10 @@ public sealed partial class Win
 
         // A login field needs a saved login on this page, a code field a saved key for one; a field for a
         // new password needs nothing.
-        var known = kind == "new" || (kind == "login" && App.Vault.Has(origin)) || (kind == "otp" && App.Vault.HasOtp(origin));
+        var known = kind == "new"
+            || (kind == "login" && App.Vault.Has(origin))
+            || (kind == "otp" && App.Vault.HasOtp(origin))
+            || (kind is "card" or "identity" && App.Vault.HasItems(kind));
         if (!known || !Box(tab, msg, kind == "otp" ? 20 : KeySize * 2, out var field))
         {
             HideField();
@@ -83,7 +87,14 @@ public sealed partial class Win
 
         _field = field;
         _fieldKind = kind;
-        ToolTipService.SetToolTip(fieldkey, kind == "new" ? "Suggest a password" : kind == "otp" ? "Fill a one-time code" : "Fill a saved login");
+        ToolTipService.SetToolTip(fieldkey, kind switch
+        {
+            "new" => "Suggest a password",
+            "otp" => "Fill a one-time code",
+            "card" => "Fill a saved card",
+            "identity" => "Fill a saved identity",
+            _ => "Fill a saved login",
+        });
         fieldkey.Margin = new Thickness(field.X + field.Width - KeySize - 6, field.Y + (field.Height - KeySize) / 2, 0, 0);
 
         // A box of a code split in digits is too small to carry the key: it only opens the list when clicked.

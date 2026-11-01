@@ -195,6 +195,8 @@ public sealed partial class Opts
 
         _prot = protection;
         _logins = vault.IsOpen ? vault.List().ToList() : new List<LoginInfo>();
+        _cards = vault.IsOpen ? vault.Items(ItemKind.Card).ToList() : new List<ItemInfo>();
+        _identities = vault.IsOpen ? vault.Items(ItemKind.Identity).ToList() : new List<ItemInfo>();
 
         Draw();
     }
@@ -240,6 +242,11 @@ public sealed partial class Opts
         _rows = new StackPanel();
         body.Children.Add(Block.Card(_skin, _rows));
         RenderList();
+
+        body.Children.Add(Block.Head(_skin, "Cards"));
+        body.Children.Add(ItemsCard(ItemKind.Card));
+        body.Children.Add(Block.Head(_skin, "Identities"));
+        body.Children.Add(ItemsCard(ItemKind.Identity));
 
         body.Children.Add(Block.Head(_skin, "Never saved for"));
         body.Children.Add(NeverCard());

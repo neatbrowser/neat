@@ -78,6 +78,12 @@ public sealed record LoginInfo(
     bool Damaged,
     bool Otp = false);
 
+/// <summary>
+/// What the list of saved cards or identities shows: a name, and a line that is not enough to use the item
+/// (the last four digits of a card, the name and town of an identity). Nothing here is a full secret.
+/// </summary>
+public sealed record ItemInfo(Guid Id, string Kind, string Label, string Summary, DateTimeOffset Created, DateTimeOffset Changed, bool Damaged);
+
 /// <summary>A one-time code for an entry and how many seconds it still lasts. Not a secret for long, but not logged either.</summary>
 public sealed record OtpCode(string Code, int SecondsLeft);
 
@@ -206,6 +212,30 @@ internal sealed class VaultFile
     public int Iterations { get; set; }
 
     public List<VaultRow> Logins { get; set; } = new();
+
+    /// <summary>Saved cards and identities. Optional: a file made before they existed has none.</summary>
+    public List<VaultItemRow> Items { get; set; } = new();
+}
+
+/// <summary>A saved card or identity. Everything but its kind and times is in one sealed block.</summary>
+internal sealed class VaultItemRow
+{
+    public string Id { get; set; } = string.Empty;
+
+    /// <summary>"card" or "identity", in the clear (it is part of what the block is sealed to).</summary>
+    public string Kind { get; set; } = string.Empty;
+
+    /// <summary>The fields as JSON, sealed. Base64.</summary>
+    public string Data { get; set; } = string.Empty;
+
+    public DateTimeOffset Created { get; set; }
+
+    public DateTimeOffset Changed { get; set; }
+
+    public VaultItemRow Copy()
+    {
+        return (VaultItemRow)MemberwiseClone();
+    }
 }
 
 internal sealed class VaultRow

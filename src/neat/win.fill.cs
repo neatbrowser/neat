@@ -85,7 +85,7 @@ public sealed partial class Win
 
     // ---- the list ----
 
-    private async Task OpenFill(Windows.Foundation.Rect? anchor = null, bool otp = false)
+    private async Task OpenFill(Windows.Foundation.Rect? anchor = null, string what = "login")
     {
         var tab = _cur;
         var core = tab?.View.CoreWebView2;
@@ -124,16 +124,25 @@ public sealed partial class Win
 
         if (!vault.IsOpen)
         {
-            AskFillUnlock(tab, anchor, otp);
+            AskFillUnlock(tab, anchor, what);
             return;
         }
 
-        ListLogins(tab, anchor, otp);
+        ListLogins(tab, anchor, what);
     }
 
     /// <summary>The logins saved for the page in <paramref name="tab"/>, to pick one from.</summary>
-    private void ListLogins(Tab tab, Windows.Foundation.Rect? anchor = null, bool otp = false)
+    private void ListLogins(Tab tab, Windows.Foundation.Rect? anchor = null, string what = "login")
     {
+        // A card or an identity belongs to no site: its own list (win.items.cs).
+        if (what is "card" or "identity")
+        {
+            ListItems(tab, anchor, what);
+            return;
+        }
+
+        var otp = what == "otp";
+
         var core = tab.View.CoreWebView2;
         var origin = core is null ? null : Origin.Of(core.Source);
         if (origin is null)
@@ -206,7 +215,7 @@ public sealed partial class Win
 
     // ---- unlocking a password vault ----
 
-    private void AskFillUnlock(Tab tab, Windows.Foundation.Rect? anchor = null, bool otp = false)
+    private void AskFillUnlock(Tab tab, Windows.Foundation.Rect? anchor = null, string what = "login")
     {
         var box = new PasswordBox { PlaceholderText = "NEAT password" };
         var message = new TextBlock { FontSize = 12, Opacity = 0.7, TextWrapping = TextWrapping.Wrap };
@@ -228,7 +237,7 @@ public sealed partial class Win
                 StartFillIdle();
 
                 if (_cur == tab)
-                    ListLogins(tab, anchor, otp);
+                    ListLogins(tab, anchor, what);
 
                 return;
             }

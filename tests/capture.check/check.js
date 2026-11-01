@@ -979,6 +979,48 @@ check('a number field that is not a code gets nothing, and a code field is not t
   expect(fieldsOf(p).length === 1 && fieldsOf(p)[0].k === 'otp', JSON.stringify(fieldsOf(p)));
 });
 
+check('card fields get a card key, by the browser marks or by what they say', () => {
+  const p = load(`<form onsubmit="return false"><input id="n" autocomplete="cc-number"><input id="h" placeholder="Name on card">
+    <input id="m" name="exp_month"><input id="s" name="security_code"><input id="e" name="cc_exp" placeholder="MM / YY"></form>`);
+  for (const id of ['n', 'h', 'm', 's', 'e']) {
+    boxed(p, '#' + id, [0, 0, 200, 30]);
+    p.focus('#' + id);
+    const f = fieldsOf(p);
+    expect(f.length && f[f.length - 1].k === 'card', id + ': ' + JSON.stringify(f));
+    p.blur('#' + id);
+  }
+});
+
+check('"security code" alone is a one-time code, with a card number beside it it is a card code; a birth month is neither', () => {
+  const a = load('<form onsubmit="return false"><input id="s" name="security_code"></form>');
+  boxed(a, '#s', [0, 0, 200, 30]); a.focus('#s');
+  expect(fieldsOf(a)[0].k === 'otp', 'alone: ' + JSON.stringify(fieldsOf(a)));
+  const b = load('<form onsubmit="return false"><input name="card_number"><input id="s" name="security_code"></form>');
+  boxed(b, '#s', [0, 0, 200, 30]); b.focus('#s');
+  expect(fieldsOf(b)[0].k === 'card', 'with a card: ' + JSON.stringify(fieldsOf(b)));
+  const c = load('<form onsubmit="return false"><input id="m" name="birth_month"></form>');
+  boxed(c, '#m', [0, 0, 200, 30]); c.focus('#m');
+  expect(fieldsOf(c).length === 0, 'a birth month got a key: ' + JSON.stringify(fieldsOf(c)));
+});
+
+check('contact fields get an identity key from the marks, or from the words when the form has three of them', () => {
+  const a = load('<form onsubmit="return false"><input id="f" autocomplete="given-name"></form>');
+  boxed(a, '#f', [0, 0, 200, 30]); a.focus('#f');
+  expect(fieldsOf(a)[0].k === 'identity', 'by the mark: ' + JSON.stringify(fieldsOf(a)));
+  const b = load('<form onsubmit="return false"><input id="x" placeholder="Street address"></form>');
+  boxed(b, '#x', [0, 0, 200, 30]); b.focus('#x');
+  expect(fieldsOf(b).length === 0, 'one word is not enough: ' + JSON.stringify(fieldsOf(b)));
+  const c = load('<form onsubmit="return false"><input id="x" placeholder="Street address"><input placeholder="City"><input placeholder="ZIP code"></form>');
+  boxed(c, '#x', [0, 0, 200, 30]); c.focus('#x');
+  expect(fieldsOf(c)[0].k === 'identity', 'by the words: ' + JSON.stringify(fieldsOf(c)));
+});
+
+check('a sign-in form is still a sign-in: the email field and the password get the login key, not an identity', () => {
+  const p = load(`<form onsubmit="return false"><input id="u" type="email" placeholder="Email address" autocomplete="email"><input id="p" type="password"><button>Sign in</button></form>`);
+  boxed(p, '#u', [0, 0, 200, 30]); p.focus('#u');
+  expect(fieldsOf(p)[0].k === 'login', JSON.stringify(fieldsOf(p)));
+});
+
 (async () => {
   for (const run of later) await run();
   console.log('\n' + (ran - failed) + ' of ' + ran + ' checks passed.');

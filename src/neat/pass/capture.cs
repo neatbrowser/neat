@@ -427,13 +427,57 @@ internal static class CaptureScript
           const RE_OTP = /\b(otp|totp|2fa|mfa|authenticator|one[ -]?time|two[ -]?factor|verification code|authentication code|security code|sms code|[68][ -]?digit)\b|mã xác (minh|thực)|mã otp|xác thực hai/;
           const wantsCode = el => (el.getAttribute('autocomplete') || '').toLowerCase() === 'one-time-code' || RE_OTP.test(labelsOf(el));
 
+          // What a field of a payment or contact form is for, from the browser's own mark (autocomplete) or, for
+          // a card, from what the field says about itself. The vocabulary is that of the saved fields
+          // (vault/items.cs): number, holder, expiry, month, year, cvc; first, last, name, phone, street, ...
+          const TOKENS = {
+            'cc-number': 'number', 'cc-name': 'holder', 'cc-exp': 'expiry', 'cc-exp-month': 'month', 'cc-exp-year': 'year', 'cc-csc': 'cvc',
+            'given-name': 'first', 'family-name': 'last', 'name': 'name', 'tel': 'phone', 'tel-national': 'phone', 'organization': 'org',
+            'street-address': 'street', 'address-line1': 'street', 'address-line2': 'street2', 'address-level2': 'city',
+            'address-level1': 'state', 'postal-code': 'zip', 'country': 'country', 'country-name': 'country',
+          };
+          const CARD_ROLES = new Set(['number', 'holder', 'expiry', 'month', 'year', 'cvc']);
+          const CARD_WORDS = [
+            [/\b(card ?number|credit card|cc ?num(ber)?)\b/, 'number'],
+            [/\b(name on card|card ?holder)\b/, 'holder'],
+            [/\b(cvc|cvv|csc|card code|card security code)\b/, 'cvc'],
+            [/\b(exp\w* ?(month|mm)|card ?month)\b/, 'month'],
+            [/\b(exp\w* ?(year|yy)|card ?year)\b/, 'year'],
+            [/\b(expiry|expiration|exp date|valid thru|mm ?\/ ?yy)\b/, 'expiry'],
+          ];
+          const ID_WORDS = [
+            [/\b(first|given) ?name\b/, 'first'], [/\b(last|family|sur) ?name\b/, 'last'], [/\b(phone|mobile|telephone)\b/, 'phone'],
+            [/\be-?mail\b/, 'email'], [/\b(zip|postal|post ?code)\b/, 'zip'], [/\b(city|town)\b/, 'city'], [/\b(street|address)\b/, 'street'],
+          ];
+          const tokenOf = el => (el.getAttribute('autocomplete') || '').toLowerCase().trim().split(/\s+/).pop() || '';
+          const roleByWords = (el, words) => {
+            const text = labelsOf(el);
+            for (const [re, role] of words) if (re.test(text)) return role;
+            return '';
+          };
+          // The role of a field in a card form ('' when it is not one).
+          const cardRole = el => {
+            const t = TOKENS[tokenOf(el)];
+            return t && CARD_ROLES.has(t) ? t : roleByWords(el, CARD_WORDS);
+          };
+          // The role of a field in a contact form: only from the browser's mark, or, when the form has at
+          // least three such fields by words, from the words.
+          const idRole = (el, box) => {
+            const t = TOKENS[tokenOf(el)];
+            if (t && !CARD_ROLES.has(t)) return t;
+            const w = roleByWords(el, ID_WORDS);
+            if (!w) return '';
+            const roles = new Set(inputs(box).filter(i => TEXTY.has(i.type) && !isPw(i)).map(i => roleByWords(i, ID_WORDS)).filter(Boolean));
+            return roles.size >= 3 ? w : '';
+          };
+
           // A field the key may sit at: shown, writable, not left out by a site rule, big enough to carry it.
           const usableField = el => !!el && el.tagName === 'INPUT' && !el.readOnly && !el.disabled &&
             (isPw(el) || TEXTY.has(el.type) || el.type === 'number') && visible(el) &&
             !rulesNow().exclude.some(s => closestDeep(el, s));
 
           // 'login' (a user name or password to fill in), 'new' (a password being chosen), 'otp' (a one-time
-          // code), or '' (no key).
+          // code), 'card' (a payment card), 'identity' (name, address, phone) or '' (no key).
           const kindOf = el => {
             if (!usableField(el)) return '';
             const box = closestDeep(el, 'form') || document;
@@ -443,7 +487,12 @@ internal static class CaptureScript
               if (role === 'cur') return 'login';
               return classify(box) === 'register' ? 'new' : 'login';
             }
+            // A card form (what the field says, or the form has a card number), before a code: "security code" is both.
+            const role = cardRole(el);
+            if (role && (role !== 'cvc' || TOKENS[tokenOf(el)] || inputs(box).some(i => cardRole(i) === 'number'))) return 'card';
+            if (!role && /\bsecurity code\b/.test(labelsOf(el)) && inputs(box).some(i => cardRole(i) === 'number')) return 'card';
             if (wantsCode(el)) return 'otp';
+            if (idRole(el, box) && shownPw(box).length === 0) return 'identity';
             if (el.type === 'number') return '';
             if (SEARCH.test(attrs(el))) return '';
             // A user name field: no key in a sign-up or change-password form.
