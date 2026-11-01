@@ -133,4 +133,121 @@ public sealed partial class Win
 
         Bubble(text, string.Empty, TimeSpan.FromSeconds(2.5));
     }
+
+    // ---- offering to save a card typed into a payment form ----
+    //
+    // The page script reports a card when the person presses a button or Enter, and only a number that
+    // passes the check digit (pass/capture.cs). It is held in memory (vault/cardcapture.cs), and only when
+    // the page moved on, with no card number field left, is the person asked. A form that is still there, or
+    // a server that refused a request of the site, means it did not go through and nothing is asked.
+    // Saving needs a click, and a vault that is shut is not asked about.
+
+    // The card the bubble is about; kept only while the bubble is up.
+    private PendingCard? _bubbleCard;
+
+    /// <summary>A page loaded while a card is held: if it shows no card number field, the payment went through.</summary>
+    private async Task AfterCard(Tab tab, Microsoft.Web.WebView2.Core.CoreWebView2 core)
+    {
+        // Pages draw their form a moment after they load.
+        await Task.Delay(700);
+
+        if (!_cardCapture.Holds(tab))
+            return;
+
+        string answer;
+        try
+        {
+            answer = await core.ExecuteScriptAsync(CaptureScript.HasCard);
+        }
+        catch (Exception)
+        {
+            // The tab was closed or moved on again.
+            _cardCapture.Drop(tab);
+            return;
+        }
+
+        if (answer == "false")
+            await OfferCard(tab);
+        else
+            _cardCapture.Drop(tab);
+    }
+
+    private async Task OfferCard(Tab tab)
+    {
+        var held = _cardCapture.Take(tab);
+
+        // The person has gone to another tab, or does not want offers here.
+        if (held is null || tab != _cur || Never.Has(App.Cfg.Cur.NeverSave, held.Site))
+            return;
+
+        var vault = App.Vault;
+
+        if (vault.Mode is null)
+        {
+            try
+            {
+                await Task.Run(() => vault.Open());
+            }
+            catch (Exception ex)
+            {
+                Log.Error("pass", ex, "opening the vault failed");
+                return;
+            }
+        }
+
+        // A vault that is shut is not asked about for a card: the person opens it in Settings.
+        if (vault.Mode is null || !vault.IsOpen || vault.FindCard(held.Number) is not null || !_cardCapture.MayOffer(held.Site))
+            return;
+
+        _bubbleCard = held;
+
+        var last = held.Number[^4..];
+        var line = "\u2022\u2022\u2022\u2022 " + last
+            + (held.Expiry.Length > 0 ? "  \u00B7  expires " + held.Expiry : string.Empty)
+            + "\nfrom  " + Lookalike.Shown(held.Site);
+
+        Bubble(
+            "Save card?",
+            line,
+            BubbleLife,
+            ("Save", () => SaveCard()),
+            ("Not now", () => HideBubble()));
+    }
+
+    private void SaveCard()
+    {
+        var card = _bubbleCard;
+        if (card is null)
+            return;
+
+        var fields = new Dictionary<string, string> { ["number"] = card.Number };
+        if (card.Holder.Length > 0)
+            fields["holder"] = card.Holder;
+
+        if (card.Expiry.Length > 0)
+            fields["expiry"] = card.Expiry;
+
+        if (card.Cvc.Length > 0)
+            fields["cvc"] = card.Cvc;
+
+        _bubbleCard = null;
+
+        try
+        {
+            App.Vault.AddItem(ItemKind.Card, fields);
+        }
+        catch (InvalidOperationException)
+        {
+            // The vault was shut while the bubble was up.
+            Bubble("Could not save", "The password vault was locked in the meantime.", TimeSpan.FromSeconds(4), ("OK", () => HideBubble()));
+            return;
+        }
+        catch (ArgumentException)
+        {
+            HideBubble();
+            return;
+        }
+
+        Bubble("Card saved", string.Empty, TimeSpan.FromSeconds(1.8));
+    }
 }

@@ -580,6 +580,112 @@ internal static class CaptureScript
 
           window.addEventListener('scroll', follow, true);
           window.addEventListener('resize', follow);
+
+          // ---- a card typed into a payment form ----
+          //
+          // Like a login, a card is reported when the person presses a button or Enter (real events only), and
+          // only if the number passes the check digit. Whether the payment went through is found out afterwards
+          // by the window, which offers to save only when the form has gone away.
+
+          const luhn = s => {
+            let sum = 0;
+            let second = false;
+            for (let i = s.length - 1; i >= 0; i--) {
+              let n = s.charCodeAt(i) - 48;
+              if (second) { n *= 2; if (n > 9) n -= 9; }
+              sum += n;
+              second = !second;
+            }
+            return sum % 10 === 0;
+          };
+
+          let lastCard = null;
+          let cardSeq = 0;
+          const offerCard = container => {
+            const root = container && container.querySelectorAll ? container : document;
+            const by = {};
+            for (const el of inputs(root).concat(Array.from(root.querySelectorAll('select')))) {
+              if (el.tagName === 'INPUT' && isPw(el)) continue;
+              if (!visible(el) || !String(el.value).trim()) continue;
+              const role = cardRole(el);
+              if (role && !by[role]) by[role] = el;
+            }
+            if (!by.number) return;
+            const raw = by.number.value.trim();
+            const digits = raw.replace(/[ -]/g, '');
+            if (!/^\d{12,19}$/.test(digits) || !luhn(digits)) return;
+            const expiry = by.expiry ? by.expiry.value.trim() : (by.month && by.year ? by.month.value.trim() + '/' + by.year.value.trim() : '');
+            const o = {
+              t: 'card', n: digits, h: by.holder ? by.holder.value.trim().slice(0, 100) : '',
+              e: expiry.slice(0, 12), c: by.cvc ? by.cvc.value.trim().slice(0, 4) : '',
+            };
+            const now = Date.now();
+            if (lastCard && lastCard.n === o.n && now - lastCard.at < 1500) return;
+            lastCard = { n: o.n, at: now };
+            post(o);
+            const field = by.number;
+            const id = ++cardSeq;
+            let ticks = 0;
+            const t = setInterval(() => {
+              ticks++;
+              if (!field.isConnected || !visible(field)) { clearInterval(t); post({ t: 'cardgone', id: id }); }
+              else if (ticks >= 20) clearInterval(t);
+            }, 400);
+          };
+
+          document.addEventListener('click', e => {
+            if (!e.isTrusted) return;
+            const t = target(e);
+            if (!t || !t.matches) return;
+            const el = closestDeep(t, 'button, input[type="submit"], input[type="image"], [role="button"]');
+            if (!el || (el.tagName === 'BUTTON' && el.type === 'reset') || notSignin(el)) return;
+            offerCard(closestDeep(el, 'form') || document);
+          }, true);
+
+          document.addEventListener('keydown', e => {
+            if (!e.isTrusted || e.isComposing || e.key !== 'Enter') return;
+            const el = target(e);
+            if (!el || el.tagName !== 'INPUT') return;
+            offerCard(closestDeep(el, 'form') || document);
+          }, true);
+        })();
+        """;
+
+    /// <summary>
+    /// Run by the window, after a page has loaded, to find out whether a card number field is on show:
+    /// a payment that went through leads to a page without one. The answer is true or false. It is read
+    /// loosely (the browser's mark, or a field that says it is a card number), and when it cannot tell
+    /// it answers true, which only means no offer is made.
+    /// </summary>
+    public const string HasCard = """
+        (() => {
+          try {
+            const up = n => n.parentElement || (n.getRootNode && n.getRootNode().host) || null;
+            const visible = el => {
+              for (let n = el; n && n.nodeType === 1; n = up(n)) {
+                if (n.hidden) return false;
+                const s = getComputedStyle(n);
+                if (s.display === 'none' || s.visibility === 'hidden' || s.opacity === '0') return false;
+              }
+              if (document.documentElement.getBoundingClientRect().width > 0) {
+                const r = el.getBoundingClientRect();
+                if (r.width < 1 || r.height < 1) return false;
+              }
+              return true;
+            };
+            const says = i => ((i.name || '') + ' ' + (i.id || '') + ' ' + (i.getAttribute('aria-label') || '') + ' ' + (i.getAttribute('placeholder') || '')).toLowerCase();
+            const stack = [document.documentElement];
+            while (stack.length) {
+              const n = stack.pop();
+              if (n.tagName === 'INPUT' && visible(n) &&
+                  (/(^|\s)cc-number(\s|$)/i.test(n.getAttribute('autocomplete') || '') || /card ?-?_?number|cardnumber|cc-?num/.test(says(n)))) return true;
+              if (n.shadowRoot) for (let c = n.shadowRoot.firstElementChild; c; c = c.nextElementSibling) stack.push(c);
+              for (let c = n.firstElementChild; c; c = c.nextElementSibling) stack.push(c);
+            }
+            return false;
+          } catch (e) {
+            return true;
+          }
         })();
         """;
 

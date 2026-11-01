@@ -96,6 +96,32 @@ public static class ItemRules
         return clean;
     }
 
+    /// <summary>The check digit of a card number (Luhn). Real card numbers pass it; most other long numbers do not.</summary>
+    public static bool Luhn(string digits)
+    {
+        if (digits.Length < 12 || digits.Length > 19 || !digits.All(char.IsAsciiDigit))
+            return false;
+
+        var sum = 0;
+        var second = false;
+
+        for (var i = digits.Length - 1; i >= 0; i--)
+        {
+            var n = digits[i] - '0';
+            if (second)
+            {
+                n *= 2;
+                if (n > 9)
+                    n -= 9;
+            }
+
+            sum += n;
+            second = !second;
+        }
+
+        return sum % 10 == 0;
+    }
+
     /// <summary>Only the digits of a text (a card number is typed with spaces or hyphens).</summary>
     public static string Digits(string? text)
     {
@@ -204,6 +230,28 @@ public sealed partial class Vault
     {
         var text = id.ToString("N");
         return _file!.Items.FirstOrDefault(r => r.Id == text);
+    }
+
+    /// <summary>The saved card with this number, if there is one (it is compared as digits). Needs the vault open.</summary>
+    public Guid? FindCard(string number)
+    {
+        var digits = ItemRules.Digits(number);
+        if (digits.Length == 0)
+            return null;
+
+        lock (_gate)
+        {
+            var key = Key();
+
+            foreach (var row in _file!.Items.Where(r => r.Kind == ItemKind.Card))
+            {
+                var fields = OpenItem(key, row);
+                if (fields is not null && fields.TryGetValue("number", out var saved) && saved == digits && Guid.TryParse(row.Id, out var id))
+                    return id;
+            }
+
+            return null;
+        }
     }
 
     /// <summary>Whether any item of a kind is saved. Like <see cref="Has"/> it needs no key, so it works while the vault is shut.</summary>

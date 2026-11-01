@@ -32,6 +32,7 @@ public sealed partial class Win
     private static readonly TimeSpan BubbleLife = TimeSpan.FromSeconds(45);
 
     private readonly Capture _capture = new();
+    private readonly CardCapture _cardCapture = new();
     private DispatcherQueueTimer? _bubbleTimer;
 
     // The login the bubble is about, and the saved entry it would update (null: it would be a new one).
@@ -77,12 +78,17 @@ public sealed partial class Win
         {
             try
             {
-                if (!_capture.Holds(tab))
+                var login = _capture.Holds(tab);
+                var card = _cardCapture.Holds(tab);
+                if (!login && !card)
                     return;
 
                 var status = e.Response.StatusCode;
-                if (_capture.Answered(tab, e.Request.Method, e.Request.Uri, status))
+                if (login && _capture.Answered(tab, e.Request.Method, e.Request.Uri, status))
                     Log.Write("pass", "a held login was dropped: the server answered " + status);
+
+                if (card && _cardCapture.Answered(tab, e.Request.Method, e.Request.Uri, status))
+                    Log.Write("pass", "a held card was dropped: the server answered " + status);
             }
             catch (Exception ex)
             {
@@ -102,6 +108,9 @@ public sealed partial class Win
         {
             if (e.IsSuccess && _capture.Holds(tab))
                 _ = Guard(() => AfterLogin(tab, core), "after a login");
+
+            if (e.IsSuccess && _cardCapture.Holds(tab))
+                _ = Guard(() => AfterCard(tab, core), "after a card");
         };
     }
 
@@ -180,6 +189,21 @@ public sealed partial class Win
                 var first = JsonText(root, "u");
                 if (first is not null)
                     _capture.HoldUser(tab, origin, first);
+
+                break;
+
+            case "card":
+                // A card typed into a payment form, held until it is known whether the form went through (win.items.cs).
+                var number = JsonText(root, "n");
+                if (number is not null)
+                    _cardCapture.Hold(tab, origin, number, JsonText(root, "h") ?? string.Empty, JsonText(root, "e") ?? string.Empty, JsonText(root, "c") ?? string.Empty);
+
+                break;
+
+            case "cardgone":
+                // The card number field went away without a new page.
+                if (_cardCapture.Holds(tab))
+                    _ = Guard(() => OfferCard(tab), "offering a card");
 
                 break;
 
@@ -480,6 +504,7 @@ public sealed partial class Win
         _bubbleTimer?.Stop();
         _bubbleLogin = null;
         _bubbleEntry = null;
+        _bubbleCard = null;
         PlaceBubble();
 
         bubble.Child = null;
@@ -492,7 +517,9 @@ public sealed partial class Win
         _bubbleTimer?.Stop();
         _bubbleLogin = null;
         _bubbleEntry = null;
+        _bubbleCard = null;
         _capture.Clear();
+        _cardCapture.Clear();
     }
 
     private static async Task Guard(Func<Task> work, string what)

@@ -24,6 +24,7 @@ function extract(name) {
 
 const SOURCE = extract('Source');
 const HAS_PASSWORD = extract('HasPassword');
+const HAS_CARD = extract('HasCard');
 const TOKEN = 'tok123';
 
 // The script as a page gets it: the token and the site rules (an object, as in pass/rules.json) filled in.
@@ -1019,6 +1020,62 @@ check('a sign-in form is still a sign-in: the email field and the password get t
   const p = load(`<form onsubmit="return false"><input id="u" type="email" placeholder="Email address" autocomplete="email"><input id="p" type="password"><button>Sign in</button></form>`);
   boxed(p, '#u', [0, 0, 200, 30]); p.focus('#u');
   expect(fieldsOf(p)[0].k === 'login', JSON.stringify(fieldsOf(p)));
+});
+
+// ---- a card typed into a payment form ----
+
+const PAY = `<form id="f" onsubmit="return false"><input id="n" autocomplete="cc-number"><input id="h" autocomplete="cc-name">
+  <select id="m" name="exp_month"><option value="">MM</option><option value="08">08</option></select>
+  <select id="y" name="exp_year"><option value="">YY</option><option value="27">27</option></select>
+  <input id="c" autocomplete="cc-csc"><button id="go" type="submit">Pay now</button></form>`;
+const cards = p => p.got().filter(x => x.t === 'card');
+
+check('a card is reported when the person presses Pay, with the expiry from two selects', () => {
+  const p = load(PAY);
+  p.set('#n', '4111 1111 1111 1111'); p.set('#h', ' A Nguyen '); p.set('#m', '08'); p.set('#y', '27'); p.set('#c', '123');
+  p.click('#go');
+  const c = cards(p);
+  expect(c.length === 1, 'got ' + JSON.stringify(p.got()));
+  expect(c[0].n === '4111111111111111' && c[0].h === 'A Nguyen' && c[0].e === '08/27' && c[0].c === '123', JSON.stringify(c[0]));
+  expect(p.live() === 1, 'it should watch for the form going away');
+  p.$('#f').style.display = 'none';
+  p.tick();
+  expect(p.got().some(x => x.t === 'cardgone'), 'the form going away was not reported');
+});
+
+check('Enter in a card field reports it too, and Enter and the click it brings are one card', () => {
+  const p = load(PAY);
+  p.set('#n', '5555555555554444');
+  p.key('#n', 'Enter');
+  p.click('#go');
+  expect(cards(p).length === 1 && cards(p)[0].n === '5555555555554444', JSON.stringify(p.got()));
+});
+
+check('a number that fails the check digit, a page that makes up a click, and Cancel report no card', () => {
+  const p = load(PAY);
+  p.set('#n', '4111111111111112');
+  p.click('#go');
+  expect(cards(p).length === 0, 'a bad number was reported');
+  const q = load(PAY.replace('Pay now', 'Cancel'));
+  q.set('#n', '4111111111111111'); q.click('#go');
+  expect(cards(q).length === 0, 'Cancel reported a card');
+  const r = load(PAY);
+  r.set('#n', '4111111111111111'); r.fakeClick('#go');
+  expect(cards(r).length === 0, 'a made-up click reported a card');
+  const s = load(PAY);
+  s.set('#n', '4111111111111111'); s.$('#n').style.display = 'none'; s.click('#go');
+  expect(cards(s).length === 0, 'a hidden field reported a card');
+});
+
+check('HasCard: true with a card number field on show, false without or when it is hidden', () => {
+  const run = html => {
+    const dom = new JSDOM(html, { runScripts: 'outside-only', virtualConsole: new VirtualConsole() });
+    return dom.window.eval(HAS_CARD);
+  };
+  expect(run('<input autocomplete="cc-number">') === true, 'by the mark');
+  expect(run('<input name="card_number">') === true, 'by the name');
+  expect(run('<input autocomplete="cc-number" style="display:none">') === false, 'hidden');
+  expect(run('<input name="email">') === false, 'something else');
 });
 
 (async () => {

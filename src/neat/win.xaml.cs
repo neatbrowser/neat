@@ -230,14 +230,21 @@ public sealed partial class Win : Window
 
         core.FaviconChanged += (s, e) => tab.SetIcon(core.FaviconUri);
 
-        // A page that asks for a new window (window.open, target=_blank, ctrl+click) gets a new
-        // tab that is that window, so a sign-in popup can answer the page that opened it (win.popup.cs).
-        core.NewWindowRequested += (s, e) => NewWindowAsked(tab, core, e);
+        // Links that ask for a new window (target=_blank, ctrl+click) become new tabs.
+        core.NewWindowRequested += (s, e) =>
+        {
+            e.Handled = true;
+            if (AdsBlockPopup(tab, e.Uri))
+                return;
 
-        // window.close() from the page closes its tab, and goes back to the page that opened it.
-        // Deferred, because the view must not be torn down from inside its own event.
+            Log.Write("tab", $"page asked for a new window, tabs now {_tabs.Count}");
+            _ = Open(e.Uri);
+        };
+
+        // window.close() from the page closes its tab. Deferred, because the
+        // view must not be torn down from inside its own event.
         core.WindowCloseRequested += (s, e) =>
-            DispatcherQueue.TryEnqueue(() => Shut(tab, toOpener: true));
+            DispatcherQueue.TryEnqueue(() => Shut(tab));
 
         // Downloads belong to the app, not to WebView2's own bubble (win.dl.cs).
         core.DownloadStarting += (s, e) => OnDownload(tab, e);
@@ -263,11 +270,8 @@ public sealed partial class Win : Window
         HideField();
     }
 
-    /// <summary>
-    /// Closes a tab. Closing the last one closes the window. With <paramref name="toOpener"/>, a tab
-    /// that was opened by a page (a sign-in popup) hands the view back to that page's tab.
-    /// </summary>
-    private void Shut(Tab tab, bool toOpener = false)
+    /// <summary>Closes a tab. Closing the last one closes the window.</summary>
+    private void Shut(Tab tab)
     {
         var i = _tabs.IndexOf(tab);
         if (i < 0)
@@ -285,6 +289,7 @@ public sealed partial class Win : Window
         // A login that was waiting to find out how it went, and a user name kept for it, are not
         // used for a closed tab.
         _capture.Forget(tab);
+        _cardCapture.Forget(tab);
 
         host.Children.Remove(tab.View);
         _tabs.RemoveAt(i);
@@ -294,12 +299,7 @@ public sealed partial class Win : Window
         tab.View.Close();
 
         if (tab == _cur)
-        {
-            if (toOpener && _opener.TryGetValue(tab, out var back) && _tabs.Contains(back))
-                Pick(back);
-            else
-                Pick(_tabs[Math.Min(i, _tabs.Count - 1)]);
-        }
+            Pick(_tabs[Math.Min(i, _tabs.Count - 1)]);
     }
 
     private void list_SelectionChanged(object sender, SelectionChangedEventArgs e)

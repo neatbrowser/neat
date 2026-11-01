@@ -76,6 +76,7 @@ src/neat/
   vault/loginnet.cs what the network says about a held login: a server that refuses it (401, 403, ...) drops it at once
   vault/totp.cs     one-time codes (RFC 6238) from the key a site gives for two-step sign-in; no network needed
   vault/items.cs    saved cards and identities (sealed like a login, tied to no site) and the rules that clean what is typed
+  vault/cardcapture.cs a card typed into a payment form, held in memory until it is known the form went through
   vault/never.cs    the sites the person said never to offer to save a password for (kept in settings.json)
   pass/capture.cs   the two page scripts of the save-password bubble (JavaScript in C# strings)
   pass/rules.cs     reads pass/rules.json and gives it to that script (format described at the top of the file)
@@ -84,7 +85,7 @@ src/neat/
   win.fill.cs       the key button in the address chip and the list of logins to fill; runs the fill script
   win.field.cs      the key drawn over a login field of the page, from where the page script says the field is
   win.suggest.cs    the strong-password suggestion at a field where a new password is chosen
-  win.items.cs      the list of saved cards or identities at a card or contact field, and filling the pick
+  win.items.cs      the list of saved cards or identities at a card or contact field, filling the pick, and the Save card? question
   pass/fill.cs      the script that fills a login into a page (JavaScript in a C# string)
   pass/suggest.cs   the strong-password maker, and the script that puts a chosen password into the new-password fields
   pass/otp.cs       the script that puts a one-time code into the field that has the focus (or into a code split in boxes)

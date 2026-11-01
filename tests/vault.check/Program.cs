@@ -79,6 +79,7 @@ internal static class Program
         Run("a one-time code key is sealed, follows its entry, and gives a code only to its own origin", OtpKeys);
         Run("a card or identity is cleaned into what is kept, with a sentence for what is wrong", ItemCleaning);
         Run("cards and identities are sealed, can be changed, and survive a change of protection", SavedItems);
+        Run("a card number is checked, and a held card is offered only once it is known to have gone through", CardHeld);
         Run("a site can be taken off the never list", NeverRemove);
         Run("the vault code never logs", NoLogging);
         Run("the real number of PBKDF2 rounds works", RealRounds);
@@ -1242,6 +1243,46 @@ internal static class Program
         Expect(legacy.AddItem(ItemKind.Identity, Fields("first", "x")) != Guid.Empty, "and one can be added");
 
         Expect(v.RemoveItem(card) && !v.RemoveItem(card) && v.Items(ItemKind.Card).Count == 0, "remove");
+    }
+
+    private static void CardHeld()
+    {
+        Expect(ItemRules.Luhn("4111111111111111") && ItemRules.Luhn("5555555555554444") && ItemRules.Luhn("378282246310005"), "real test numbers pass");
+        Expect(!ItemRules.Luhn("4111111111111112") && !ItemRules.Luhn("1234567890123") && !ItemRules.Luhn("411111111111") && !ItemRules.Luhn("4111 1111 1111 1111"), "others do not");
+
+        var now = DateTime.UtcNow;
+        var cards = new CardCapture { Clock = () => now };
+        var tab = new object();
+        var other = new object();
+
+        Expect(!cards.Hold(tab, "https://shop.example", "4111111111111112", "A", "08/27", "123"), "a bad check digit is not held");
+        Expect(!cards.Hold(tab, "https://shop.example", "4111 abcd 1111 1111", "A", "08/27", "123"), "letters are not a number");
+        Expect(!cards.Hold(tab, "about:blank", "4111111111111111", "A", "08/27", "123"), "not a web page");
+        Expect(!cards.Holds(tab), "nothing held so far");
+
+        Expect(cards.Hold(tab, "https://Shop.example/pay?x=1", "4111 1111-1111 1111", "  A Nguyen ", "8/2027", "12"), "held");
+        var held = cards.Take(tab) ?? throw new Exception("nothing taken");
+        Expect(held.Site == "https://shop.example" && held.Number == "4111111111111111" && held.Holder == "A Nguyen", "site, number, holder");
+        Expect(held.Expiry == "08/27" && held.Cvc == string.Empty, "the expiry is made right, a security code that is not one is left out");
+        Expect(cards.Take(tab) is null && !cards.Holds(tab), "taken once");
+
+        cards.Hold(tab, "https://shop.example", "4111111111111111", string.Empty, "99/99", "123");
+        Expect(cards.Take(tab)!.Expiry == string.Empty && cards.Hold(other, "https://shop.example", "4111111111111111", "", "", "1234") && cards.Take(other)!.Cvc == "1234", "bad expiry is left out, a 4 digit code is kept");
+
+        cards.Hold(tab, "https://shop.example", "4111111111111111", "", "08/27", "123");
+        now = now.AddSeconds(25);
+        Expect(!cards.Holds(tab) && cards.Take(tab) is null, "a card that waited too long is gone");
+
+        // A refusal from the same site drops it; a good answer, another site and a background call do not.
+        cards.Hold(tab, "https://shop.example", "4111111111111111", "", "08/27", "123");
+        Expect(!cards.Answered(tab, "POST", "https://shop.example/pay", 200), "a good answer proves nothing");
+        Expect(!cards.Answered(tab, "POST", "https://elsewhere.test/pay", 422), "another site");
+        Expect(!cards.Answered(tab, "POST", "https://shop.example/analytics", 400), "a background call");
+        Expect(cards.Answered(tab, "POST", "https://shop.example/pay", 422) && !cards.Holds(tab), "a refusal drops it");
+
+        Expect(cards.MayOffer("https://shop.example") && !cards.MayOffer("https://shop.example"), "an offer is not repeated at once");
+        now = now.AddSeconds(31);
+        Expect(cards.MayOffer("https://shop.example"), "but later it may be");
     }
 
     private static void PasswordGenerated()
