@@ -45,6 +45,7 @@ jobs:
           node check-suggest.js
           node check-otp.js
           node check-form.js
+          node check-frame.js
 
       # The ad blocker's dll and filter lists (tools/fetch-ads.ps1). If they cannot be fetched the
       # build goes on without them and the app runs without a blocker.
