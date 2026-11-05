@@ -23,6 +23,8 @@ namespace neat;
 ///     so, for a real press only) and the vault is already open. A shut vault is never asked about
 ///     because a field was clicked; the key still shows and asks when it is pressed.
 ///   - Nothing is filled until a login is picked in the list.
+///   - A field inside a frame gets the key too (win.frames.cs): the frame says the kind of field, the top page says where the
+///     frame sits, and the list and the fill go to that frame, with the frame's own address.
 ///   - What the page says is only a place to draw: numbers are checked, kept inside the page, and a
 ///     field that is not on show or too small for the key gets none.
 /// </summary>
@@ -52,10 +54,13 @@ public sealed partial class Win
         if (tab is null || at is null)
             return;
 
+        // The key of a field in a frame fills into that frame (win.frames.cs).
+        var via = ViaNow();
+
         if (_fieldKind == "new")
-            PasswordList(tab, at, true);
+            PasswordList(tab, at, true, via);
         else
-            _ = Guard(() => OpenFill(at, _fieldKind), "opening the fill list at a field");
+            _ = Guard(() => OpenFill(at, _fieldKind, via), "opening the fill list at a field");
     }
 
     /// <summary>The page says which field has the focus (or that none has). Only for the tab on show.</summary>
@@ -64,29 +69,57 @@ public sealed partial class Win
         if (_closed || tab != _cur)
             return;
 
-        var shown = _bubbleAnchored;
         var kind = JsonText(msg, "k");
 
-        // A login field needs a saved login on this page, a code field a saved key for one; a field for a
-        // new password needs nothing.
-        var known = kind == "new"
-            || (kind == "login" && App.Vault.Has(origin))
-            || (kind == "otp" && App.Vault.HasOtp(origin))
-            || (kind is "card" or "identity" && App.Vault.HasItems(kind));
-        if (!known || !Box(tab, msg, kind == "otp" ? 20 : KeySize * 2, out var field))
+        // "No field" from the page itself takes down only a key that is the page's own: the focus moving
+        // into a frame says it too, a moment before the frame says where it went.
+        if (kind is null)
+        {
+            if (_fieldFrame is null)
+                HideField(false);
+
+            return;
+        }
+
+        if (!KnownKind(kind, origin) || !Box(tab, msg, kind == "otp" ? 20 : KeySize * 2, out var field))
         {
             HideField();
             return;
         }
 
         var click = msg.TryGetProperty("c", out var c) && c.ValueKind == JsonValueKind.Number;
+        ShowKey(field, kind, origin, null, click);
+    }
 
+    // A login field needs a saved login on this page, a code field a saved key for one; a field for a
+    // new password needs nothing.
+    private static bool KnownKind(string? kind, string origin)
+    {
+        return kind == "new"
+            || (kind == "login" && App.Vault.Has(origin))
+            || (kind == "otp" && App.Vault.HasOtp(origin))
+            || (kind is "card" or "identity" && App.Vault.HasItems(kind));
+    }
+
+    /// <summary>
+    /// Draws the key at a field. <paramref name="via"/> is the frame the field is in (null: the page's own), and
+    /// <paramref name="origin"/> the address its logins are saved for.
+    /// </summary>
+    private void ShowKey(Rect field, string kind, string origin, Via? via, bool click)
+    {
         // A list that hangs under a field that has since moved, or been left by the keyboard, is taken down.
-        if (shown && !click)
+        if (_bubbleAnchored && !click)
             HideBubble();
 
         _field = field;
         _fieldKind = kind;
+        _fieldFrame = via?.Frame;
+        _fieldOrigin = origin;
+
+        // A field of the page itself replaces any field of a frame that was waiting for its box.
+        if (via is null)
+            _fk = null;
+
         ToolTipService.SetToolTip(fieldkey, kind switch
         {
             "new" => "Suggest a password",
@@ -105,14 +138,25 @@ public sealed partial class Win
             OpenAtField();
     }
 
-    /// <summary>Takes the key down, and the list with it if it hangs under a field.</summary>
-    private void HideField()
+    /// <summary>
+    /// Takes the key down, and the list with it if it hangs under a field. <paramref name="forget"/>: also forget
+    /// the field of a frame that was waiting for its box (the page changed or the tab did).
+    /// </summary>
+    private void HideField(bool forget = true)
     {
         if (_closed)
             return;
 
         _field = null;
+        _fieldFrame = null;
+        _fieldOrigin = null;
         fieldkey.Visibility = Visibility.Collapsed;
+
+        if (forget)
+        {
+            _fk = null;
+            _fr = null;
+        }
 
         if (_bubbleAnchored)
             HideBubble();
@@ -126,24 +170,27 @@ public sealed partial class Win
     {
         box = default;
 
-        if (!msg.TryGetProperty("r", out var r) || r.ValueKind != JsonValueKind.Array || r.GetArrayLength() != 4)
+        if (!msg.TryGetProperty("r", out var r) || !TryRect(r, out var v))
             return false;
 
-        var v = new double[4];
-        var i = 0;
-        foreach (var n in r.EnumerateArray())
-        {
-            if (n.ValueKind != JsonValueKind.Number || !n.TryGetDouble(out v[i]) || !double.IsFinite(v[i]) || Math.Abs(v[i]) > 100000)
-                return false;
+        var width = msg.TryGetProperty("v", out var pageWidth) && pageWidth.ValueKind == JsonValueKind.Number
+            && pageWidth.TryGetDouble(out var pw) ? pw : 0;
 
-            i++;
-        }
+        return BoxAt(tab, v, width, least, out box);
+    }
+
+    /// <summary>
+    /// The same from numbers already read. <paramref name="pageWidth"/> is the page's width in its own pixels
+    /// (0 when not told): the zoom is the view's width over it.
+    /// </summary>
+    private static bool BoxAt(Tab tab, double[] v, double pageWidth, double least, out Rect box)
+    {
+        box = default;
 
         // The page's zoom: the view is as wide as the page's own width times the zoom.
         var zoom = 1d;
-        if (msg.TryGetProperty("v", out var pageWidth) && pageWidth.ValueKind == JsonValueKind.Number
-            && pageWidth.TryGetDouble(out var pw) && pw >= 1 && pw < 100000 && tab.View.ActualWidth > 0)
-            zoom = tab.View.ActualWidth / pw;
+        if (pageWidth >= 1 && pageWidth < 100000 && tab.View.ActualWidth > 0)
+            zoom = tab.View.ActualWidth / pageWidth;
 
         if (!(zoom >= 0.25 && zoom <= 5))
             zoom = 1;

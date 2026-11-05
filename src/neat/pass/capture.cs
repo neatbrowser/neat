@@ -6,7 +6,11 @@ namespace neat;
 /// login forms, so keep each one between its own """ marks and do not use """ inside.
 ///
 /// What the page script does and does not do:
-///   - It runs in the top page only. A login form inside an embedded frame is not captured.
+///   - It runs in the top page and in the frames right under it (not deeper ones, and not a frame without an
+///     address of its own, such as about:blank or srcdoc). What a frame reports goes to the window only through
+///     the frame's own channel (never to the parent page), marked fr, and the window takes the address from
+///     that channel, not from the message. Where a frame's field sits on the page is told by the top page
+///     (it alone can see the frame's box): the frame posts the box to its parent, and the top page forwards it.
 ///   - It reacts only to real clicks and the Enter key (isTrusted): a page that makes up events
 ///     cannot make it report anything. It does NOT listen for "submit": the browser itself fires
 ///     that, with isTrusted true, when a page calls button.click() or form.requestSubmit(), so
@@ -55,14 +59,31 @@ internal static class CaptureScript
 
     public const string Source = """
         (() => {
-          if (window.top !== window) return;
+          // A frame is read only when it sits right under the top page and is an ordinary web page (not
+          // about:blank, srcdoc or a sandbox without an origin). Frames deeper down are left alone.
+          const inFrame = window.top !== window;
+          if (inFrame && (window.parent !== window.top || !/^https?:$/.test(location.protocol))) return;
           const w = window.chrome && window.chrome.webview;
           if (!w) return;
           const send = w.postMessage.bind(w);
           const TOKEN = '__TOKEN__';
           const RULES = __RULES__;
           const MAX = 512;
-          const post = o => { try { send('neatpw:' + TOKEN + ':' + JSON.stringify(o)); } catch (e) {} };
+          // What names this frame to the window and to the top page (the two halves of one field message
+          // are matched by it). Not a secret: the frame's own page can read it, and nothing depends on it
+          // but where a key is drawn.
+          const FID = !inFrame ? '' : (() => {
+            try { const a = new Uint32Array(4); crypto.getRandomValues(a); return Array.from(a, n => n.toString(36)).join(''); }
+            catch (e) { return String(Math.random()).slice(2) + Date.now().toString(36); }
+          })();
+          // Everything a frame says goes to the window through the frame's own channel (fr: 1), which the
+          // window ties to the frame and to its address. Nothing secret is ever posted to the parent page.
+          const post = o => {
+            try {
+              if (inFrame) { o.fr = 1; o.fid = FID; }
+              send('neatpw:' + TOKEN + ':' + JSON.stringify(o));
+            } catch (e) {}
+          };
 
           // ---- walking the page, open shadow roots included ----
 
@@ -513,6 +534,89 @@ internal static class CaptureScript
             return [Math.round(r.left), Math.round(r.top), Math.round(r.width), Math.round(r.height)];
           };
 
+          // ---- a field inside a frame: the top page tells where the frame is ----
+          //
+          // A frame says (through its own channel to the window) what kind of field has the focus, and posts the
+          // field's box to this page, which alone can see where the frame sits. This page turns the box into
+          // the top page's own coordinates and sends it to the window. All that is sent is a rectangle and the
+          // frame's name (fid): a page that forges these can only move a key, because what is listed and filled
+          // is decided from the address the frame itself reported, and goes only into that frame.
+
+          let fr = null;        // { fid, src, r }: the field of a frame that has the focus
+          let frSaid = '';
+          let frPoll = null;
+
+          const framesIn = () => {
+            const out = [];
+            const stack = [document.documentElement];
+            while (stack.length) {
+              const n = stack.pop();
+              if (n.tagName === 'IFRAME') out.push(n);
+              if (n.shadowRoot) for (let c = n.shadowRoot.firstElementChild; c; c = c.nextElementSibling) stack.push(c);
+              for (let c = n.firstElementChild; c; c = c.nextElementSibling) stack.push(c);
+            }
+            return out;
+          };
+
+          // The frame element of this page that a window is the contents of (null: not a frame of this page).
+          const frameOf = src => framesIn().find(f => { try { return f.contentWindow === src; } catch (e) { return false; } }) || null;
+
+          // The field's box in this page's pixels, clipped to the frame's own box; null when the frame is not on show.
+          const frameBox = () => {
+            if (!fr) return null;
+            const el = frameOf(fr.src);
+            if (!el || !visible(el)) return null;
+            const b = el.getBoundingClientRect();
+            const cs = getComputedStyle(el);
+            const s = el.offsetWidth > 0 ? b.width / el.offsetWidth : 1;
+            const ox = b.left + ((el.clientLeft || 0) + (parseFloat(cs.paddingLeft) || 0)) * s;
+            const oy = b.top + ((el.clientTop || 0) + (parseFloat(cs.paddingTop) || 0)) * s;
+            const x0 = Math.max(ox + fr.r[0] * s, b.left);
+            const y0 = Math.max(oy + fr.r[1] * s, b.top);
+            const x1 = Math.min(ox + (fr.r[0] + fr.r[2]) * s, b.right);
+            const y1 = Math.min(oy + (fr.r[1] + fr.r[3]) * s, b.bottom);
+            if (!(x1 > x0 && y1 > y0)) return null;
+            return [Math.round(x0), Math.round(y0), Math.round(x1 - x0), Math.round(y1 - y0)];
+          };
+
+          const frReport = () => {
+            if (!fr) return;
+            const r = frameBox();
+            const o = r ? { t: 'frect', fid: fr.fid, r: r, v: window.innerWidth } : { t: 'frect', fid: fr.fid, r: null };
+            const sig = JSON.stringify(o);
+            if (sig !== frSaid) { frSaid = sig; post(o); }
+          };
+
+          // The frame's field is gone (the frame said so, the person clicked in this page, or the frame left the screen).
+          const dropFrame = () => {
+            if (!fr) return;
+            const fid = fr.fid;
+            fr = null;
+            frSaid = '';
+            if (frPoll !== null) { clearInterval(frPoll); frPoll = null; }
+            post({ t: 'frect', fid: fid, r: null });
+          };
+
+          if (!inFrame) {
+            window.addEventListener('message', e => {
+              try {
+                const d = e.data;
+                if (!d || typeof d !== 'object' || d.neat !== TOKEN || typeof d.fid !== 'string' || d.fid.length === 0 || d.fid.length > 80) return;
+                if (!e.source || e.source === window) return;
+                if (d.r === null) {
+                  if (fr && fr.fid === d.fid && fr.src === e.source) dropFrame();
+                  return;
+                }
+                if (!Array.isArray(d.r) || d.r.length !== 4 || !d.r.every(n => typeof n === 'number' && isFinite(n) && Math.abs(n) < 100000)) return;
+                if (!frameOf(e.source)) return;
+                if (fr && fr.src !== e.source) dropFrame();
+                fr = { fid: d.fid, src: e.source, r: d.r.slice() };
+                if (frPoll === null) frPoll = setInterval(() => { if (!fr) return; if (!frameBox()) dropFrame(); else frReport(); }, 400);
+                if (!frameBox()) dropFrame(); else frReport();
+              } catch (err) {}
+            });
+          }
+
           let at = null;       // the field the window was last told about
           let said = '{"t":"field","r":null}';   // what it was told, to say nothing twice (it starts knowing "no field")
           let rectNow = '';
@@ -529,13 +633,23 @@ internal static class CaptureScript
             const least = k === 'otp' ? 20 : 60;
             if (r && (r[2] < least || r[3] < 18) && document.documentElement.getBoundingClientRect().width > 0) k = '';
             at = k ? el : null;
+            if (k) dropFrame();
             rectNow = k ? JSON.stringify(r) : '';
             const o = k ? { t: 'field', k: k, r: r, v: window.innerWidth } : { t: 'field', r: null };
             const sig = JSON.stringify(o);
             if (sig !== said || (click && k)) {
               if (k && click) o.c = 1;
               said = sig;
-              post(o);
+              if (inFrame) {
+                // Where the field is on the page is known only to the top page, which can see the frame's box:
+                // the box goes there (a rectangle, nothing else), and what kind of field it is goes to the window.
+                try { window.parent.postMessage({ neat: TOKEN, fid: FID, r: o.r, v: o.v }, '*'); } catch (e) {}
+                const h = k ? { t: 'field', k: k } : { t: 'field', r: null };
+                if (o.c) h.c = 1;
+                post(h);
+              } else {
+                post(o);
+              }
             }
             if (at && poll === null) poll = setInterval(follow, 400);
             if (!at && poll !== null) { clearInterval(poll); poll = null; }
@@ -551,6 +665,8 @@ internal static class CaptureScript
           document.addEventListener('pointerdown', e => {
             if (!e.isTrusted) return;
             pointerAt = Date.now();
+            // A press in this page (a press inside a frame never reaches it) leaves the field of a frame.
+            if (fr) dropFrame();
             // A press on the field that already has the focus gives no focus event: ask again.
             const t = target(e);
             if (t && t === at) report(at, true);

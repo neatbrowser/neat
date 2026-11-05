@@ -6,7 +6,7 @@ namespace neat;
 /// The script that puts a saved card or identity into the form of the page the person is looking at, when
 /// they pick it in the list at one of its fields (win.field.cs). It keeps the rules of the fill script
 /// (pass/fill.cs): the values go in as data, the page's origin is the one the window saw (checked from inside
-/// the page, so a navigation in between gets nothing), the top page only, only fields the person can see and
+/// the page, so a navigation in between gets nothing), the top page or a frame right under it that knows its parent (see fill.cs), only fields the person can see and
 /// type in, values set the way the browser does with input and change events fired.
 ///
 /// Which field is which is read from the browser's own mark (autocomplete: cc-number, cc-exp, given-name, ...)
@@ -19,16 +19,20 @@ namespace neat;
 /// </summary>
 internal static class FormScript
 {
-    public static string For(string origin, string kind, IReadOnlyDictionary<string, string> fields)
+    public static string For(string origin, string kind, IReadOnlyDictionary<string, string> fields, string? top = null)
     {
-        var data = JsonSerializer.Serialize(new { o = origin, k = kind, d = fields });
+        var data = JsonSerializer.Serialize(new { o = origin, k = kind, d = fields, t = top });
         return "(" + Source + ")(" + data + ");";
     }
 
     public const string Source = """
         (a) => {
           try {
-            if (window.top !== window) return 'frame';
+            // Inside a frame only when the window said which page is above it, and that page is its direct parent.
+            if (window.top !== window) {
+              const above = location.ancestorOrigins;
+              if (!a.t || !above || above.length !== 1 || above[0] !== a.t) return 'frame';
+            }
             if (location.origin !== a.o) return 'origin';
 
             const up = n => n.parentElement || (n.getRootNode && n.getRootNode().host) || null;

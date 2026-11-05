@@ -14,7 +14,8 @@ namespace neat;
 ///   - It checks for itself that the page it runs in has exactly the origin the login was saved
 ///     for. The window has checked that too, but a page can navigate between the check and the
 ///     run, and this is the check that cannot be raced.
-///   - It fills only the top page, never a frame.
+///   - It fills the top page, or a frame right under it when the window names the page above (a.t) and the frame
+///     itself finds that to be its parent (location.ancestorOrigins); no other frame, and a frame without that check, gets 'frame'.
 ///   - It fills only fields the person can see and type in: shown, with a size, not pushed off
 ///     the page, not transparent, not read-only or disabled. A hidden field is how a fake form
 ///     catches a password, so it is never touched.
@@ -26,16 +27,20 @@ namespace neat;
 internal static class FillScript
 {
     /// <summary>The script to run, with the login as data.</summary>
-    public static string For(string origin, string user, string password)
+    public static string For(string origin, string user, string password, string? top = null)
     {
-        var data = JsonSerializer.Serialize(new { o = origin, u = user, p = password });
+        var data = JsonSerializer.Serialize(new { o = origin, u = user, p = password, t = top });
         return "(" + Source + ")(" + data + ");";
     }
 
     public const string Source = """
         (a) => {
           try {
-            if (window.top !== window) return 'frame';
+            // Inside a frame only when the window said which page is above it, and that page is its direct parent.
+            if (window.top !== window) {
+              const above = location.ancestorOrigins;
+              if (!a.t || !above || above.length !== 1 || above[0] !== a.t) return 'frame';
+            }
             if (location.origin !== a.o) return 'origin';
 
             const visible = el => {

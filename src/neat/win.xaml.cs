@@ -290,6 +290,8 @@ public sealed partial class Win : Window
         // used for a closed tab.
         _capture.Forget(tab);
         _cardCapture.Forget(tab);
+        _loginFrame.Remove(tab);
+        _cardFrame.Remove(tab);
 
         host.Children.Remove(tab.View);
         _tabs.RemoveAt(i);

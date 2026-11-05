@@ -5,7 +5,7 @@ namespace neat;
 /// <summary>
 /// The script that puts a one-time code into the page, when the person picks a login in the list at a
 /// code field. It follows the rules of the fill script (pass/fill.cs): the code goes in as data, the
-/// page's origin is checked from inside the page, the top page only, only a field the person can see and
+/// page's origin is checked from inside the page, the top page or a frame right under it that knows its parent (see fill.cs), only a field the person can see and
 /// type in, values set the way the browser does with input and change events fired.
 ///
 /// It fills the field that has the focus (the one the key was pressed at). When that field takes one
@@ -15,16 +15,20 @@ namespace neat;
 /// </summary>
 internal static class OtpScript
 {
-    public static string For(string origin, string code)
+    public static string For(string origin, string code, string? top = null)
     {
-        var data = JsonSerializer.Serialize(new { o = origin, p = code });
+        var data = JsonSerializer.Serialize(new { o = origin, p = code, t = top });
         return "(" + Source + ")(" + data + ");";
     }
 
     public const string Source = """
         (a) => {
           try {
-            if (window.top !== window) return 'frame';
+            // Inside a frame only when the window said which page is above it, and that page is its direct parent.
+            if (window.top !== window) {
+              const above = location.ancestorOrigins;
+              if (!a.t || !above || above.length !== 1 || above[0] !== a.t) return 'frame';
+            }
             if (location.origin !== a.o) return 'origin';
 
             const up = n => n.parentElement || (n.getRootNode && n.getRootNode().host) || null;

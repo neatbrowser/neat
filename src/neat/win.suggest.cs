@@ -12,7 +12,7 @@ namespace neat;
 /// </summary>
 public sealed partial class Win
 {
-    private void PasswordList(Tab tab, Windows.Foundation.Rect? anchor, bool symbols)
+    private void PasswordList(Tab tab, Windows.Foundation.Rect? anchor, bool symbols, Via? via = null)
     {
         var pass = PasswordGen.Make(PasswordGen.Default, symbols);
 
@@ -35,14 +35,14 @@ public sealed partial class Win
         });
 
         var sym = new CheckBox { Content = "Symbols", IsChecked = symbols, MinWidth = 0 };
-        sym.Click += (s, e) => PasswordList(tab, anchor, sym.IsChecked == true);
+        sym.Click += (s, e) => PasswordList(tab, anchor, sym.IsChecked == true, via);
         panel.Children.Add(sym);
 
         var use = new Button { Content = "Use" };
-        use.Click += (s, e) => _ = Guard(() => UseSuggested(tab, pass), "using a suggested password");
+        use.Click += (s, e) => _ = Guard(() => UseSuggested(tab, pass, via), "using a suggested password");
 
         var other = new Button { Content = "Another" };
-        other.Click += (s, e) => PasswordList(tab, anchor, sym.IsChecked == true);
+        other.Click += (s, e) => PasswordList(tab, anchor, sym.IsChecked == true, via);
 
         var cancel = new Button { Content = "Cancel" };
         cancel.Click += (s, e) => HideBubble();
@@ -56,19 +56,20 @@ public sealed partial class Win
         Present(panel, FillLife, anchor);
     }
 
-    private async Task UseSuggested(Tab tab, string pass)
+    private async Task UseSuggested(Tab tab, string pass, Via? via = null)
     {
         HideBubble();
 
         var core = tab.View.CoreWebView2;
-        var origin = core is null ? null : Origin.Of(core.Source);
-        if (core is null || origin is null || _cur != tab)
+        var top = core is null ? null : Origin.Of(core.Source);
+        var origin = via?.Origin ?? top;
+        if (core is null || origin is null || top is null || _cur != tab)
             return;
 
         string answer;
         try
         {
-            answer = await core.ExecuteScriptAsync(SuggestScript.For(origin, pass));
+            answer = await RunIn(core, via, SuggestScript.For(origin, pass, Above(core, via)));
         }
         catch (Exception ex)
         {

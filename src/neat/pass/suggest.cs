@@ -52,23 +52,27 @@ internal static class PasswordGen
 /// suggestion list. It fills the field that has the focus (the one the key was pressed at) and any
 /// empty password field of the same form beside it that is not the password in use now: the
 /// confirmation. It keeps the rules of the fill script (pass/fill.cs): the password goes in as data,
-/// the page's origin is checked from inside the page, the top page only, only fields the person can
+/// the page's origin is checked from inside the page, the top page or a frame right under it that knows its parent (see fill.cs), only fields the person can
 /// see and type in, values set the way the browser does, input and change events fired. It returns
 /// pass, pass+confirm, none, origin or frame. It is JavaScript in a C# string and is run by
 /// tests/capture.check against made-up pages, so keep it between its own """ marks.
 /// </summary>
 internal static class SuggestScript
 {
-    public static string For(string origin, string password)
+    public static string For(string origin, string password, string? top = null)
     {
-        var data = JsonSerializer.Serialize(new { o = origin, p = password });
+        var data = JsonSerializer.Serialize(new { o = origin, p = password, t = top });
         return "(" + Source + ")(" + data + ");";
     }
 
     public const string Source = """
         (a) => {
           try {
-            if (window.top !== window) return 'frame';
+            // Inside a frame only when the window said which page is above it, and that page is its direct parent.
+            if (window.top !== window) {
+              const above = location.ancestorOrigins;
+              if (!a.t || !above || above.length !== 1 || above[0] !== a.t) return 'frame';
+            }
             if (location.origin !== a.o) return 'origin';
 
             const up = n => n.parentElement || (n.getRootNode && n.getRootNode().host) || null;

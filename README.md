@@ -84,6 +84,7 @@ src/neat/
   win.pass.cs       the save-password bubble: takes the page's report, decides what to offer, shows the bubble
   win.fill.cs       the key button in the address chip and the list of logins to fill; runs the fill script
   win.field.cs      the key drawn over a login field of the page, from where the page script says the field is
+  win.frames.cs     forms inside frames: reads what a frame reports through its own channel, puts the key at its field, and fills into that frame
   win.suggest.cs    the strong-password suggestion at a field where a new password is chosen
   win.items.cs      the list of saved cards or identities at a card or contact field, filling the pick, and the Save card? question
   pass/fill.cs      the script that fills a login into a page (JavaScript in a C# string)

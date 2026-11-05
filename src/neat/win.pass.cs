@@ -23,8 +23,9 @@ namespace neat;
 ///   3. Only then is the person asked, in a small bubble under the address, with Save, Not now and
 ///      Never for this site. Nothing is saved without a click, and nothing blocks the page.
 ///
-/// A login is only accepted from the page that is open in the tab, by origin, never from a frame
-/// inside it. A password is not written to the log: failures here are logged by kind only.
+/// A login is only accepted from the page that is open in the tab, by origin, or from a frame right under
+/// it through the frame's own channel (win.frames.cs), with the frame's own address. A password is not
+/// written to the log: failures here are logged by kind only.
 /// </summary>
 public sealed partial class Win
 {
@@ -103,6 +104,9 @@ public sealed partial class Win
                 HideField();
         };
 
+        // Frames the page makes (win.frames.cs).
+        core.FrameCreated += (s, e) => HookFrame(tab, e.Frame);
+
         // A page finished loading while a login is held: find out if the login worked.
         core.NavigationCompleted += (s, e) =>
         {
@@ -156,19 +160,37 @@ public sealed partial class Win
         if (!text.StartsWith(head, StringComparison.Ordinal) || text.Length > 4096)
             return;
 
-        // Only the page open in this tab. A frame inside it reports its own address, and a tab that has
-        // moved on is not the page the person typed into.
+        // Only the page open in this tab. A frame reports through its own channel (win.frames.cs), and a
+        // tab that has moved on is not the page the person typed into.
         var core = tab.View.CoreWebView2;
         var origin = Origin.Of(source);
         if (core is null || origin is null || origin != Origin.Of(core.Source))
             return;
 
+        Dispatch(tab, origin, null, text, head);
+    }
+
+    /// <summary>
+    /// What a page or a frame reported. <paramref name="origin"/> is the address of whoever sent it, as WebView2 says
+    /// (for a frame, <paramref name="frame"/> is set). A frame speaks only through its own channel and marks what
+    /// it says (fr); anything that does not fit that is dropped.
+    /// </summary>
+    private void Dispatch(Tab tab, string origin, CoreWebView2Frame? frame, string text, string head)
+    {
         using var doc = JsonDocument.Parse(text.AsMemory(head.Length), new JsonDocumentOptions { MaxDepth = 4 });
         var root = doc.RootElement;
 
         if (root.ValueKind != JsonValueKind.Object
             || !root.TryGetProperty("t", out var kind)
             || kind.ValueKind != JsonValueKind.String)
+            return;
+
+        if (root.TryGetProperty("fr", out _) != (frame is not null))
+            return;
+
+        var core = tab.View.CoreWebView2;
+        var top = core is null ? null : Origin.Of(core.Source);
+        if (top is null)
             return;
 
         switch (kind.GetString())
@@ -179,8 +201,8 @@ public sealed partial class Win
 
                 // Set only by a change-password form: the password the person had before.
                 var old = JsonText(root, "o");
-                if (user is not null && pass is not null)
-                    _capture.Hold(tab, origin, user, pass, old);
+                if (user is not null && pass is not null && _capture.Hold(tab, origin, user, pass, old))
+                    SetFrame(_loginFrame, tab, frame);
 
                 break;
 
@@ -194,27 +216,40 @@ public sealed partial class Win
 
             case "card":
                 // A card typed into a payment form, held until it is known whether the form went through (win.items.cs).
+                // It is held for the top page's address, the shop the person is paying, also when typed in a frame.
                 var number = JsonText(root, "n");
-                if (number is not null)
-                    _cardCapture.Hold(tab, origin, number, JsonText(root, "h") ?? string.Empty, JsonText(root, "e") ?? string.Empty, JsonText(root, "c") ?? string.Empty);
+                if (number is not null
+                    && _cardCapture.Hold(tab, top, number, JsonText(root, "h") ?? string.Empty, JsonText(root, "e") ?? string.Empty, JsonText(root, "c") ?? string.Empty))
+                    SetFrame(_cardFrame, tab, frame);
 
                 break;
 
             case "cardgone":
-                // The card number field went away without a new page.
-                if (_cardCapture.Holds(tab))
+                // The card number field went away without a new page (said by whoever reported the card).
+                if (_cardCapture.Holds(tab) && SameFrame(_cardFrame, tab, frame))
                     _ = Guard(() => OfferCard(tab), "offering a card");
 
                 break;
 
             case "field":
-                // Where the field with the focus is, for the key drawn over it (win.field.cs).
-                OnField(tab, origin, root);
+                // Where the field with the focus is, for the key drawn over it (win.field.cs, win.frames.cs).
+                if (frame is null)
+                    OnField(tab, origin, root);
+                else
+                    OnFrameField(tab, frame, origin, root);
+
+                break;
+
+            case "frect":
+                // Where a frame's field is on the page: only the top page can tell.
+                if (frame is null)
+                    OnFrameRect(root);
+
                 break;
 
             case "gone":
                 // The password field went away without a new page: a login on a page that works by script.
-                if (_capture.Holds(tab))
+                if (_capture.Holds(tab) && SameFrame(_loginFrame, tab, frame))
                     _ = Guard(() => Offer(tab), "offering a login");
 
                 break;
@@ -238,19 +273,24 @@ public sealed partial class Win
         string answer;
         try
         {
-            answer = await core.ExecuteScriptAsync(CaptureScript.HasPassword);
+            // In the frame that reported the login, if it did and the frame is still there.
+            answer = await RunHeld(_loginFrame, tab, core, CaptureScript.HasPassword);
         }
         catch (Exception)
         {
             // The tab was closed or moved on again.
             _capture.Drop(tab);
+            _loginFrame.Remove(tab);
             return;
         }
 
         if (answer == "false")
             await Offer(tab);
         else
+        {
             _capture.Drop(tab);
+            _loginFrame.Remove(tab);
+        }
     }
 
     // ---- deciding what to offer ----
@@ -258,6 +298,7 @@ public sealed partial class Win
     private async Task Offer(Tab tab)
     {
         var held = _capture.Take(tab);
+        var framed = _loginFrame.Remove(tab);
 
         // The person has gone to another tab: asking there would be out of place.
         if (held is null || tab != _cur)
@@ -265,6 +306,9 @@ public sealed partial class Win
 
         if (Never.Has(App.Cfg.Cur.NeverSave, held.Site))
             return;
+
+        // The page above, when the login was typed in a frame of it: said in the question.
+        var top = tab.View.CoreWebView2 is { } c ? Origin.Of(c.Source) : null;
 
         var vault = App.Vault;
 
@@ -308,7 +352,7 @@ public sealed partial class Win
                 var named = held with { User = held.User.Length > 0 ? held.User : entry?.User ?? string.Empty };
 
                 if (!vault.Lookup(named.Site, named.User, named.Password).SamePassword)
-                    AskSave(named, targets[0]);
+                    AskSave(named, targets[0], framed ? top : null);
 
                 return;
             }
@@ -320,12 +364,12 @@ public sealed partial class Win
         if (match.SamePassword)
             return;
 
-        AskSave(held, match.Id);
+        AskSave(held, match.Id, framed ? top : null);
     }
 
     // ---- the bubble ----
 
-    private void AskSave(Pending login, Guid? entry)
+    private void AskSave(Pending login, Guid? entry, string? embeddedIn = null)
     {
         _bubbleLogin = login;
         _bubbleEntry = entry;
@@ -335,7 +379,9 @@ public sealed partial class Win
 
         Bubble(
             update ? "Update password?" : "Save password?",
-            who + "  on  " + login.Site + "\nPassword: \u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022",
+            who + "  on  " + login.Site
+                + (embeddedIn is null ? string.Empty : "\n(typed in a frame of  " + embeddedIn + ")")
+                + "\nPassword: \u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022",
             BubbleLife,
             (update ? "Update" : "Save", () => SaveLogin()),
             ("Not now", () => HideBubble()),
@@ -520,6 +566,8 @@ public sealed partial class Win
         _bubbleCard = null;
         _capture.Clear();
         _cardCapture.Clear();
+        _loginFrame.Clear();
+        _cardFrame.Clear();
     }
 
     private static async Task Guard(Func<Task> work, string what)

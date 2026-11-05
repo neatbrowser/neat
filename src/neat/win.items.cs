@@ -16,11 +16,11 @@ namespace neat;
 /// </summary>
 public sealed partial class Win
 {
-    private void ListItems(Tab tab, Windows.Foundation.Rect? anchor, string kind)
+    private void ListItems(Tab tab, Windows.Foundation.Rect? anchor, string kind, Via? via = null)
     {
         var core = tab.View.CoreWebView2;
-        var origin = core is null ? null : Origin.Of(core.Source);
-        if (origin is null)
+        var top = core is null ? null : Origin.Of(core.Source);
+        if (top is null)
             return;
 
         var card = kind == ItemKind.Card;
@@ -43,18 +43,7 @@ public sealed partial class Win
         });
 
         // Where it will go, as the person should read it.
-        panel.Children.Add(new TextBlock
-        {
-            Text = "Into  " + Lookalike.Shown(origin),
-            FontSize = 12,
-            TextWrapping = TextWrapping.Wrap,
-        });
-
-        if (origin.StartsWith("http://", StringComparison.Ordinal))
-            panel.Children.Add(Warn("This page is not secure (http): anything typed into it can be read on the way."));
-
-        if (Lookalike.Warning(origin) is { } warning)
-            panel.Children.Add(Warn(warning));
+        AddWhere(panel, via, top);
 
         foreach (var item in items)
         {
@@ -71,7 +60,7 @@ public sealed partial class Win
                 HorizontalAlignment = HorizontalAlignment.Stretch,
                 HorizontalContentAlignment = HorizontalAlignment.Left,
             };
-            b.Click += (s, e) => _ = Guard(() => FillItem(tab, id, kind), "filling a saved item");
+            b.Click += (s, e) => _ = Guard(() => FillItem(tab, id, kind, via), "filling a saved item");
             panel.Children.Add(b);
         }
 
@@ -82,7 +71,7 @@ public sealed partial class Win
         Present(panel, FillLife, anchor);
     }
 
-    private async Task FillItem(Tab tab, Guid id, string kind)
+    private async Task FillItem(Tab tab, Guid id, string kind, Via? via = null)
     {
         HideBubble();
 
@@ -90,8 +79,9 @@ public sealed partial class Win
         if (core is null || _cur != tab)
             return;
 
-        var origin = Origin.Of(core.Source);
-        var fields = origin is null ? null : App.Vault.FillItem(id, kind);
+        var origin = via?.Origin ?? Origin.Of(core.Source);
+        var above = Above(core, via);
+        var fields = origin is null || (via is not null && above is null) ? null : App.Vault.FillItem(id, kind);
         if (fields is null || origin is null)
         {
             Bubble("Could not fill", "That item could not be opened.", TimeSpan.FromSeconds(4), ("OK", () => HideBubble()));
@@ -103,7 +93,7 @@ public sealed partial class Win
         string answer;
         try
         {
-            answer = await core.ExecuteScriptAsync(FormScript.For(origin, kind, fields));
+            answer = await RunIn(core, via, FormScript.For(origin, kind, fields, above));
         }
         catch (Exception ex)
         {
@@ -157,24 +147,29 @@ public sealed partial class Win
         string answer;
         try
         {
-            answer = await core.ExecuteScriptAsync(CaptureScript.HasCard);
+            answer = await RunHeld(_cardFrame, tab, core, CaptureScript.HasCard);
         }
         catch (Exception)
         {
             // The tab was closed or moved on again.
             _cardCapture.Drop(tab);
+            _cardFrame.Remove(tab);
             return;
         }
 
         if (answer == "false")
             await OfferCard(tab);
         else
+        {
             _cardCapture.Drop(tab);
+            _cardFrame.Remove(tab);
+        }
     }
 
     private async Task OfferCard(Tab tab)
     {
         var held = _cardCapture.Take(tab);
+        _cardFrame.Remove(tab);
 
         // The person has gone to another tab, or does not want offers here.
         if (held is null || tab != _cur || Never.Has(App.Cfg.Cur.NeverSave, held.Site))

@@ -17,7 +17,8 @@ namespace neat;
 ///     https login never reaches an http page and a look-alike address never gets one. The vault
 ///     checks that again when it hands the login over, and the script checks it a third time in the
 ///     page itself, because a page can navigate between the click and the fill.
-///   - Only the top page is filled, never a frame; only fields the person can see and type in.
+///   - Only the top page is filled, or the frame that holds the key (win.frames.cs), never another frame; only fields the
+///     person can see and type in.
 ///   - The login goes to the page as data (one JSON object), never glued into script text.
 ///   - The address the login will go into is shown in the list, in a form that is hard to fake, with a
 ///     warning for letters outside a-z (see vault/lookalike.cs) and for an http page.
@@ -85,7 +86,7 @@ public sealed partial class Win
 
     // ---- the list ----
 
-    private async Task OpenFill(Windows.Foundation.Rect? anchor = null, string what = "login")
+    private async Task OpenFill(Windows.Foundation.Rect? anchor = null, string what = "login", Via? via = null)
     {
         var tab = _cur;
         var core = tab?.View.CoreWebView2;
@@ -124,29 +125,32 @@ public sealed partial class Win
 
         if (!vault.IsOpen)
         {
-            AskFillUnlock(tab, anchor, what);
+            AskFillUnlock(tab, anchor, what, via);
             return;
         }
 
-        ListLogins(tab, anchor, what);
+        ListLogins(tab, anchor, what, via);
     }
 
     /// <summary>The logins saved for the page in <paramref name="tab"/>, to pick one from.</summary>
-    private void ListLogins(Tab tab, Windows.Foundation.Rect? anchor = null, string what = "login")
+    private void ListLogins(Tab tab, Windows.Foundation.Rect? anchor = null, string what = "login", Via? via = null)
     {
         // A card or an identity belongs to no site: its own list (win.items.cs).
         if (what is "card" or "identity")
         {
-            ListItems(tab, anchor, what);
+            ListItems(tab, anchor, what, via);
             return;
         }
 
         var otp = what == "otp";
 
         var core = tab.View.CoreWebView2;
-        var origin = core is null ? null : Origin.Of(core.Source);
-        if (origin is null)
+        var top = core is null ? null : Origin.Of(core.Source);
+        if (top is null)
             return;
+
+        // The address the logins are for: the frame's own when the field is in a frame.
+        var origin = via?.Origin ?? top;
 
         var logins = App.Vault.Find(origin).Where(l => !l.Damaged && (!otp || l.Otp)).Take(FillMax).ToList();
         if (logins.Count == 0)
@@ -167,18 +171,7 @@ public sealed partial class Win
         });
 
         // The address the login will go into, as the person should read it.
-        panel.Children.Add(new TextBlock
-        {
-            Text = "Into  " + Lookalike.Shown(origin),
-            FontSize = 12,
-            TextWrapping = TextWrapping.Wrap,
-        });
-
-        if (origin.StartsWith("http://", StringComparison.Ordinal))
-            panel.Children.Add(Warn("This page is not secure (http): anything typed into it can be read on the way."));
-
-        if (Lookalike.Warning(origin) is { } warning)
-            panel.Children.Add(Warn(warning));
+        AddWhere(panel, via, top);
 
         foreach (var login in logins)
         {
@@ -191,7 +184,7 @@ public sealed partial class Win
                 HorizontalAlignment = HorizontalAlignment.Stretch,
                 HorizontalContentAlignment = HorizontalAlignment.Left,
             };
-            b.Click += (s, e) => _ = Guard(() => otp ? FillCode(tab, id) : FillWith(tab, id), "filling a login");
+            b.Click += (s, e) => _ = Guard(() => otp ? FillCode(tab, id, via) : FillWith(tab, id, via), "filling a login");
             panel.Children.Add(b);
         }
 
@@ -213,9 +206,41 @@ public sealed partial class Win
         };
     }
 
+    /// <summary>
+    /// The lines of a list that say where a pick goes: the address as it should be read, with a warning for an
+    /// http page or letters outside a-z, for the frame and, when it is in a frame, for the page above it too.
+    /// </summary>
+    private static void AddWhere(StackPanel panel, Via? via, string top)
+    {
+        panel.Children.Add(new TextBlock
+        {
+            Text = IntoLine(via, top),
+            FontSize = 12,
+            TextWrapping = TextWrapping.Wrap,
+        });
+
+        foreach (var origin in via is null ? new[] { top } : new[] { via.Origin, top })
+        {
+            if (origin.StartsWith("http://", StringComparison.Ordinal))
+            {
+                panel.Children.Add(Warn("This page is not secure (http): anything typed into it can be read on the way."));
+                break;
+            }
+        }
+
+        foreach (var origin in via is null ? new[] { top } : new[] { via.Origin, top })
+        {
+            if (Lookalike.Warning(origin) is { } warning)
+            {
+                panel.Children.Add(Warn(warning));
+                break;
+            }
+        }
+    }
+
     // ---- unlocking a password vault ----
 
-    private void AskFillUnlock(Tab tab, Windows.Foundation.Rect? anchor = null, string what = "login")
+    private void AskFillUnlock(Tab tab, Windows.Foundation.Rect? anchor = null, string what = "login", Via? via = null)
     {
         var box = new PasswordBox { PlaceholderText = "NEAT password" };
         var message = new TextBlock { FontSize = 12, Opacity = 0.7, TextWrapping = TextWrapping.Wrap };
@@ -237,7 +262,7 @@ public sealed partial class Win
                 StartFillIdle();
 
                 if (_cur == tab)
-                    ListLogins(tab, anchor, what);
+                    ListLogins(tab, anchor, what, via);
 
                 return;
             }
@@ -312,7 +337,7 @@ public sealed partial class Win
 
     // ---- filling ----
 
-    private async Task FillWith(Tab tab, Guid id)
+    private async Task FillWith(Tab tab, Guid id, Via? via = null)
     {
         HideBubble();
 
@@ -322,8 +347,11 @@ public sealed partial class Win
 
         // The page as it is right now. The vault hands a login out only if this is exactly the origin it was
         // saved for, and the script checks again from inside the page.
-        var page = core.Source;
+        var page = via?.Origin ?? core.Source;
         var origin = Origin.Of(page);
+        var above = Above(core, via);
+        if (via is not null && above is null)
+            return;
 
         string script;
         using (var fill = origin is null ? null : App.Vault.Fill(id, page))
@@ -334,7 +362,7 @@ public sealed partial class Win
                 return;
             }
 
-            script = FillScript.For(origin, fill.User, fill.Password.Text());
+            script = FillScript.For(origin, fill.User, fill.Password.Text(), above);
         }
 
         _fillLast = DateTime.UtcNow;
@@ -342,7 +370,7 @@ public sealed partial class Win
         string answer;
         try
         {
-            answer = await core.ExecuteScriptAsync(script);
+            answer = await RunIn(core, via, script);
         }
         catch (Exception ex)
         {
@@ -378,7 +406,7 @@ public sealed partial class Win
     // ---- one-time codes ----
 
     /// <summary>Puts the one-time code of a saved login into the field that has the focus.</summary>
-    private async Task FillCode(Tab tab, Guid id)
+    private async Task FillCode(Tab tab, Guid id, Via? via = null)
     {
         HideBubble();
 
@@ -386,9 +414,10 @@ public sealed partial class Win
         if (core is null || _cur != tab)
             return;
 
-        var page = core.Source;
+        var page = via?.Origin ?? core.Source;
         var origin = Origin.Of(page);
-        if (origin is null)
+        var above = Above(core, via);
+        if (origin is null || (via is not null && above is null))
             return;
 
         var code = App.Vault.Code(id, page, DateTimeOffset.UtcNow);
@@ -415,7 +444,7 @@ public sealed partial class Win
         string answer;
         try
         {
-            answer = await core.ExecuteScriptAsync(OtpScript.For(origin, code.Code));
+            answer = await RunIn(core, via, OtpScript.For(origin, code.Code, above));
         }
         catch (Exception ex)
         {
