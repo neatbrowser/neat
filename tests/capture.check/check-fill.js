@@ -229,5 +229,64 @@ check('the script keeps nothing behind and a page without the pieces it needs gi
   expect(p.fill(ORIGIN, '', '') === 'none', 'no values');
 });
 
+// ---- the form that holds the focus, and shadow roots ----
+
+const TWO = `<form id="in"><input id="u1" type="text" autocomplete="username"><input id="p1" type="password"></form>
+  <form id="up"><input id="u2" type="text" name="username"><input id="p2" type="password"><input id="p3" type="password"></form>`;
+
+check('with two forms the one that holds the focus is filled, the other is left alone', () => {
+  const p = load(TWO);
+  p.$('#p2').focus();
+  expect(p.fill(ORIGIN, 'alice', 'secret') === 'user+pass', 'result');
+  expect(p.val('#u2') === 'alice' && p.val('#p2') === 'secret' && p.val('#u1') === '' && p.val('#p1') === '', 'the wrong form');
+  const q = load(TWO);
+  q.$('#u2').focus();
+  q.fill(ORIGIN, 'alice', 'secret');
+  expect(q.val('#u2') === 'alice' && q.val('#p2') === 'secret' && q.val('#p1') === '', 'a user field in focus');
+});
+
+check('with nothing in focus the first form is filled, as before', () => {
+  const p = load(TWO);
+  p.fill(ORIGIN, 'alice', 'secret');
+  expect(p.val('#u1') === 'alice' && p.val('#p1') === 'secret' && p.val('#p2') === '', 'values');
+});
+
+check('a focused field outside any login (a search box) does not stop the page being filled', () => {
+  const p = load('<form id="s"><input id="q" type="text" name="q"></form>' + TWO);
+  p.$('#q').focus();
+  expect(p.fill(ORIGIN, 'alice', 'secret') === 'user+pass', 'result');
+  expect(p.val('#u1') === 'alice' && p.val('#p1') === 'secret' && p.val('#q') === '', 'values');
+});
+
+check('the user name is taken from the password\'s own form, not from an earlier form', () => {
+  const p = load('<form><input id="other" type="text" name="username"></form><form><input id="p" type="password"></form>');
+  p.$('#p').focus();
+  expect(p.fill(ORIGIN, 'alice', 'secret') === 'pass', 'result');
+  expect(p.val('#other') === '' && p.val('#p') === 'secret', 'values');
+});
+
+check('a login inside a shadow root is found, with the user name before the password', () => {
+  const p = load('<div id="host"></div>');
+  const root = p.$('#host').attachShadow({ mode: 'open' });
+  root.innerHTML = '<form><input id="u" type="text" autocomplete="username"><input id="p" type="password"></form>';
+  expect(p.fill(ORIGIN, 'alice', 'secret') === 'user+pass', 'result');
+  expect(root.querySelector('#u').value === 'alice' && root.querySelector('#p').value === 'secret', 'values');
+});
+
+check('two components side by side: the one with the focus is filled', () => {
+  const p = load('<div id="a"></div><div id="b"></div>');
+  for (const id of ['a', 'b']) p.$('#' + id).attachShadow({ mode: 'open' }).innerHTML = '<input id="u" type="text" autocomplete="username"><input id="p" type="password">';
+  const b = p.$('#b').shadowRoot;
+  b.querySelector('#p').focus();
+  expect(p.fill(ORIGIN, 'alice', 'secret') === 'user+pass', 'result');
+  expect(b.querySelector('#p').value === 'secret' && p.$('#a').shadowRoot.querySelector('#p').value === '', 'the wrong component');
+});
+
+check('a field in a hidden component is not filled', () => {
+  const p = load('<div id="h" style="display:none"></div>');
+  p.$('#h').attachShadow({ mode: 'open' }).innerHTML = '<input id="p" type="password">';
+  expect(p.fill(ORIGIN, 'alice', 'secret') === 'none', 'result');
+});
+
 console.log('\n' + (ran - failed) + ' of ' + ran + ' checks passed.');
 process.exit(failed === 0 ? 0 : 1);

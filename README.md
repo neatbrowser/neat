@@ -87,7 +87,7 @@ src/neat/
   win.frames.cs     forms inside frames: reads what a frame reports through its own channel, puts the key at its field, and fills into that frame
   win.suggest.cs    the strong-password suggestion at a field where a new password is chosen
   win.items.cs      the list of saved cards or identities at a card or contact field, filling the pick, and the Save card? question
-  pass/fill.cs      the script that fills a login into a page (JavaScript in a C# string)
+  pass/fill.cs      the script that fills a login into the form that holds the focus, shadow roots included (JavaScript in a C# string)
   pass/suggest.cs   the strong-password maker, and the script that puts a chosen password into the new-password fields
   pass/otp.cs       the script that puts a one-time code into the field that has the focus (or into a code split in boxes)
   pass/form.cs      the script that fills a saved card or identity into the form that holds the focus

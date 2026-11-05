@@ -16,6 +16,10 @@ namespace neat;
 ///     run, and this is the check that cannot be raced.
 ///   - It fills the top page, or a frame right under it when the window names the page above (a.t) and the frame
 ///     itself finds that to be its parent (location.ancestorOrigins); no other frame, and a frame without that check, gets 'frame'.
+///   - It fills the form that holds the field with the focus (the one the key was drawn over), and only that
+///     one, so a page with a sign-in and a sign-up side by side gets the login in the right one. With no
+///     field in focus, or when the focused field's form has nothing to fill, it looks at the whole page.
+///   - It reads inside open shadow roots (web components), where many sign-in boxes live.
 ///   - It fills only fields the person can see and type in: shown, with a size, not pushed off
 ///     the page, not transparent, not read-only or disabled. A hidden field is how a fake form
 ///     catches a password, so it is never touched.
@@ -45,7 +49,8 @@ internal static class FillScript
 
             const visible = el => {
               if (!el || !el.isConnected) return false;
-              for (let n = el; n && n.nodeType === 1; n = n.parentElement) {
+              // Up through the tree, and out of a shadow root into the element that hosts it.
+              for (let n = el; n && n.nodeType === 1; n = n.parentElement || (n.getRootNode() && n.getRootNode().host)) {
                 if (n.hidden) return false;
                 const s = getComputedStyle(n);
                 if (s.display === 'none' || s.visibility === 'hidden' || s.opacity === '0') return false;
@@ -73,16 +78,44 @@ internal static class FillScript
               el.dispatchEvent(new Event('change', { bubbles: true }));
             };
 
-            const fields = Array.from(document.querySelectorAll('input'));
-            const pws = fields.filter(i => i.type === 'password' && usable(i) && !/new-password/i.test(hint(i)));
+            // Every input in page order, open shadow roots included (a closed one cannot be read).
+            const every = [];
+            const walk = node => {
+              for (let c = node.firstElementChild; c; c = c.nextElementSibling) {
+                if (c.tagName === 'INPUT') every.push(c);
+                if (c.shadowRoot) walk(c.shadowRoot);
+                walk(c);
+              }
+            };
+            walk(document);
+
+            // The form (or the web component) of an input: what makes two inputs belong together.
+            const groupOf = el => el.form || (el.getRootNode() instanceof ShadowRoot ? el.getRootNode() : null);
+
+            // The field with the focus, also when it is inside a shadow root.
+            let focus = document.activeElement;
+            while (focus && focus.shadowRoot && focus.shadowRoot.activeElement) focus = focus.shadowRoot.activeElement;
+
+            const isNew = i => /new-password/i.test(hint(i));
+            const isUser = i => TEXTY.has(i.type) && usable(i) &&
+              (i.type === 'email' || /(^|\s)(username|email)(\s|$)/i.test(hint(i)) || IDENT.test((i.name || '') + ' ' + (i.id || '')));
+
+            // The focused field's form, if it has a login to fill; otherwise the whole page.
+            let fields = every;
+            if (focus && focus.tagName === 'INPUT' && groupOf(focus)) {
+              const mine = every.filter(i => groupOf(i) === groupOf(focus));
+              if (mine.some(i => (i.type === 'password' && usable(i) && !isNew(i)) || (a.u && isUser(i))))
+                fields = mine;
+            }
+
+            const pws = fields.filter(i => i.type === 'password' && usable(i) && !isNew(i));
             let did = '';
 
             if (pws.length > 0) {
-              const pw = pws[0];
+              const pw = pws.includes(focus) ? focus : pws[0];
               if (a.u) {
-                const root = pw.form || document;
-                const before = Array.from(root.querySelectorAll('input')).filter(i =>
-                  TEXTY.has(i.type) && usable(i) && (pw.compareDocumentPosition(i) & Node.DOCUMENT_POSITION_PRECEDING));
+                // The fields before the password, in page order (it works across shadow roots too).
+                const before = fields.slice(0, fields.indexOf(pw)).filter(i => TEXTY.has(i.type) && usable(i) && (!groupOf(pw) || groupOf(i) === groupOf(pw)));
                 const marked = before.filter(i => /(^|\s)(username|email)(\s|$)/i.test(hint(i)));
                 const user = marked.length ? marked[marked.length - 1] : before[before.length - 1];
                 if (user) { put(user, a.u); did += 'user+'; }
@@ -90,9 +123,8 @@ internal static class FillScript
               put(pw, a.p);
               did += 'pass';
             } else if (a.u) {
-              const first = fields.filter(i => TEXTY.has(i.type) && usable(i) &&
-                (i.type === 'email' || /(^|\s)(username|email)(\s|$)/i.test(hint(i)) || IDENT.test((i.name || '') + ' ' + (i.id || ''))));
-              if (first.length) { put(first[0], a.u); did = 'user'; }
+              const first = fields.filter(isUser);
+              if (first.length) { put(first.includes(focus) ? focus : first[0], a.u); did = 'user'; }
             }
 
             return did === '' ? 'none' : did;
