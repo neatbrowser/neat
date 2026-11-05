@@ -173,7 +173,8 @@ public sealed partial class Win
     {
         try
         {
-            return frame.IsDestroyed();
+            // In .NET it is an int: 0 while the frame lives.
+            return frame.IsDestroyed() != 0;
         }
         catch (Exception)
         {
@@ -185,7 +186,7 @@ public sealed partial class Win
     /// Runs a script in the frame that reported the held login (or card), or in the top page when the top page
     /// did, or when that frame is gone (the page moved on: then the page above is what shows how it went).
     /// </summary>
-    private static Task<string> RunHeld(Dictionary<Tab, CoreWebView2Frame> map, Tab tab, CoreWebView2 core, string script)
+    private static Windows.Foundation.IAsyncOperation<string> RunHeld(Dictionary<Tab, CoreWebView2Frame> map, Tab tab, CoreWebView2 core, string script)
     {
         return map.TryGetValue(tab, out var frame) && !Dead(frame)
             ? frame.ExecuteScriptAsync(script)
@@ -313,7 +314,7 @@ public sealed partial class Win
             : "Into  " + Lookalike.Shown(via.Origin) + "\n(a frame inside  " + Lookalike.Shown(top) + ")";
     }
 
-    private static Task<string> RunIn(CoreWebView2 core, Via? via, string script)
+    private static Windows.Foundation.IAsyncOperation<string> RunIn(CoreWebView2 core, Via? via, string script)
     {
         return via is null ? core.ExecuteScriptAsync(script) : via.Frame.ExecuteScriptAsync(script);
     }
