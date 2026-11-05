@@ -93,7 +93,7 @@ internal static class Aad
         using (var w = new BinaryWriter(stream, Encoding.UTF8, leaveOpen: true))
         {
             w.Write("neat-vault");
-            w.Write((byte)Vault.FormatVersion);
+            w.Write((byte)Vault.SealVersion);
             w.Write(purpose);
 
             foreach (var part in parts)

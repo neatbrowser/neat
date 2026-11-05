@@ -79,6 +79,7 @@ internal static class Program
         Run("a one-time code key is sealed, follows its entry, and gives a code only to its own origin", OtpKeys);
         Run("a card or identity is cleaned into what is kept, with a sentence for what is wrong", ItemCleaning);
         Run("cards and identities are sealed, can be changed, and survive a change of protection", SavedItems);
+        Run("the file is version 2 only while it holds what an older NEAT would lose", FileVersion);
         Run("a card number is checked, and a held card is offered only once it is known to have gone through", CardHeld);
         Run("a site can be taken off the never list", NeverRemove);
         Run("the vault code never logs", NoLogging);
@@ -1243,6 +1244,68 @@ internal static class Program
         Expect(legacy.AddItem(ItemKind.Identity, Fields("first", "x")) != Guid.Empty, "and one can be added");
 
         Expect(v.RemoveItem(card) && !v.RemoveItem(card) && v.Items(ItemKind.Card).Count == 0, "remove");
+    }
+
+    private static void FileVersion()
+    {
+        const string key = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";
+        var at = DateTimeOffset.FromUnixTimeSeconds(59);
+
+        int Version(string p) => Read(p)["Version"]!.GetValue<int>();
+
+        var path = TempFile();
+        var v = NewVault(path);
+        v.Open();
+        Expect(Version(path) == 1, "a new vault is version 1");
+
+        var id = v.Add("https://a.example", "u", "p");
+        Expect(Version(path) == 1, "logins alone stay version 1, so every NEAT can read the file");
+
+        // A key for one-time codes makes it version 2, and it is version 2 again after every later write.
+        Expect(v.SetOtp(id, key), "set the key");
+        Expect(Version(path) == 2, "a one-time-code key makes it version 2");
+        v.Add("https://b.example", "u", "p");
+        Expect(Version(path) == 2, "and it stays so");
+
+        // Fields sealed before the change still open: the sealing does not depend on the file's version.
+        var reopened = NewVault(path);
+        Expect(reopened.Open() == OpenResult.Ready, "a version 2 file opens here");
+        Expect(RevealText(reopened, id) == "p" && reopened.Code(id, "https://a.example", at)?.Code == "287082", "password and key open");
+
+        // A vault that held a login before the change keeps opening: version 1 sealed fields are read as they were.
+        var old = TempFile();
+        var legacy = NewVault(old);
+        legacy.Open();
+        var oldId = legacy.Add("https://c.example", "u", "secret");
+        Expect(Version(old) == 1, "the old file is version 1");
+        var json = Read(old);
+        json["Version"] = 1;
+        Save(old, json);
+        var again = NewVault(old);
+        Expect(again.Open() == OpenResult.Ready && RevealText(again, oldId) == "secret", "a version 1 file still opens");
+        again.AddItem(ItemKind.Identity, Fields("first", "An"));
+        Expect(Version(old) == 2, "a saved identity makes it version 2");
+        var third = NewVault(old);
+        Expect(third.Open() == OpenResult.Ready && RevealText(third, oldId) == "secret", "the old login opens after the file became version 2");
+
+        // The way back: nothing left that an older NEAT would lose, so it is version 1 again.
+        var items = again.Items(ItemKind.Identity);
+        Expect(again.RemoveItem(items.Single().Id), "remove the identity");
+        Expect(Version(old) == 1, "version 1 again with only logins in it");
+        Expect(v.SetOtp(id, null), "clear the key");
+        Expect(Version(path) == 1, "and again after the key goes");
+
+        // A card too, and a change of protection keeps the version that fits what is inside.
+        var card = v.AddItem(ItemKind.Card, Fields("number", "4111 1111 1111 1111"));
+        Expect(Version(path) == 2, "a card makes it version 2");
+        Expect(v.UsePassword("correct horse battery".AsSpan()) == VaultResult.Ok && Version(path) == 2, "a change of protection keeps version 2");
+        Expect(v.RemoveItem(card), "remove the card");
+        Expect(v.UseDpapi() == VaultResult.Ok && Version(path) == 1, "and goes back to version 1 with nothing left");
+
+        // A file from a NEAT that knows only version 1 meets a version 2 file: it must report and leave it (see BadFiles).
+        var future = TempFile();
+        File.WriteAllText(future, "{ \"Version\": 3, \"Mode\": \"dpapi\", \"Key\": \"AAAA\", \"Logins\": [] }");
+        Expect(NewVault(future).Open() == OpenResult.TooNew, "a version this code does not know is still reported");
     }
 
     private static void CardHeld()

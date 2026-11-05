@@ -37,8 +37,23 @@ namespace neat;
 /// </summary>
 public sealed partial class Vault : IDisposable
 {
-    /// <summary>The version of the file layout this code writes.</summary>
-    public const int FormatVersion = 1;
+    /// <summary>
+    /// The newest file layout this code reads (and writes, when the file needs it). Version 1 is the layout
+    /// of the logins; version 2 is the same with one-time-code keys or saved cards and identities in it, which
+    /// an older NEAT does not know and would drop the next time it saved. So a file is written as version 2
+    /// only while it holds any of them, and an older NEAT then reports it as too new and leaves it alone
+    /// instead of rewriting it without them.
+    /// </summary>
+    public const int FormatVersion = 2;
+
+    /// <summary>The layout of a file that holds only logins, which every NEAT reads.</summary>
+    public const int BaseVersion = 1;
+
+    /// <summary>
+    /// Part of what every sealed field is bound to (seal.cs). It stays 1 for every layout: changing it would
+    /// make every field sealed before the change unreadable.
+    /// </summary>
+    public const int SealVersion = 1;
 
     /// <summary>PBKDF2-SHA256 rounds for a new password key (OWASP's figure for SHA-256).</summary>
     public const int DefaultIterations = 600_000;
@@ -890,7 +905,7 @@ public sealed partial class Vault : IDisposable
 
         _file = new VaultFile
         {
-            Version = FormatVersion,
+            Version = BaseVersion,
             Mode = ModeDpapi,
             Key = Convert.ToBase64String(_wrap.Protect(key)),
         };
@@ -1166,6 +1181,9 @@ public sealed partial class Vault : IDisposable
     {
         var folder = Path.GetDirectoryName(Path.GetFullPath(_path))!;
         Directory.CreateDirectory(folder);
+
+        // Version 2 only while the file holds what an older NEAT would lose (see FormatVersion).
+        _file!.Version = _file.Items.Count > 0 || _file.Logins.Any(r => r.Otp is not null) ? FormatVersion : BaseVersion;
 
         var temp = _path + ".tmp";
         var bytes = JsonSerializer.SerializeToUtf8Bytes(_file, Json);

@@ -197,6 +197,7 @@ public sealed class Secret : IDisposable
 
 internal sealed class VaultFile
 {
+    /// <summary>1 for logins only, 2 while the file holds one-time-code keys, cards or identities (see Vault.FormatVersion).</summary>
     public int Version { get; set; }
 
     /// <summary>"dpapi" or "password".</summary>
@@ -213,7 +214,7 @@ internal sealed class VaultFile
 
     public List<VaultRow> Logins { get; set; } = new();
 
-    /// <summary>Saved cards and identities. Optional: a file made before they existed has none.</summary>
+    /// <summary>Saved cards and identities. Optional: a file made before they existed has none. A file that holds any is written as version 2.</summary>
     public List<VaultItemRow> Items { get; set; } = new();
 }
 
@@ -254,7 +255,7 @@ internal sealed class VaultRow
     /// <summary>
     /// Sealed. Base64. The key of the one-time codes of this login (see <see cref="Totp"/>), or null
     /// when it has none. Optional on purpose: a file without it is a valid version 1 file, and an
-    /// entry is sealed with it only once a key is set.
+    /// entry is sealed with it only once a key is set. A file that holds one is written as version 2.
     /// </summary>
     public string? Otp { get; set; }
 
