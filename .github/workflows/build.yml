@@ -26,6 +26,11 @@ jobs:
       - name: Vault self-check
         run: dotnet run --project tests/vault.check --configuration Release
 
+      # The extension wrappers (src/neat/web/ext.cs) reach the browser profile only through a small
+      # interface, so they are checked against a fake one (tests/ext.check, no test packages).
+      - name: Extensions self-check
+        run: dotnet run --project tests/ext.check --configuration Release
+
       # The scripts that run inside web pages (src/neat/pass/capture.cs, which watches login
       # forms, src/neat/pass/fill.cs, which fills them, and the script in src/neat/pass/suggest.cs,
       # which puts a suggested password in) are JavaScript, so they are checked
