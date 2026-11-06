@@ -99,6 +99,9 @@ public sealed record ImportResult(int Added, int Already, int Conflicts, int Ski
 /// <summary>Every saved login, for an export, and how many entries could not be read.</summary>
 public sealed record ExportResult(List<ImportRow> Rows, int Damaged);
 
+/// <summary>Every saved card and identity, for an export, and how many could not be read.</summary>
+public sealed record ExportItemsResult(List<ItemRow> Rows, int Damaged);
+
 /// <summary>
 /// A saved login handed over to be filled into a page: the user name and the password. Dispose it
 /// as soon as the page has been given the values, which overwrites the password bytes.

@@ -93,7 +93,7 @@ src/neat/
   pass/form.cs      the script that fills a saved card or identity into the form that holds the focus
   vault/lookalike.cs how an address is shown before filling, and the warning for fake-looking ones
   vault/csv.cs      reading and writing CSV, the format other browsers export passwords in
-  vault/exchange.cs turns another browser's password export into logins, and logins into one
+  vault/exchange.cs turns another browser's password export into logins (with the key of their one-time codes), and logins into one; also the file of cards and identities
   opts.pass.exchange.cs Settings > Passwords, third part: never-save list, editing a login, import and export
   opts.pass.items.cs Settings > Passwords, fourth part: saved cards and identities
   pass/hello.cs     Windows Hello, behind the gate's IHello

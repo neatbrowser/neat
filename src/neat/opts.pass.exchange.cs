@@ -9,9 +9,11 @@ namespace neat;
 
 /// <summary>
 /// The Passwords page, third part: the list of sites never to offer to save for, editing a login,
-/// and moving logins in and out as CSV files (the format Chrome, Edge and Firefox use).
+/// and moving logins in and out as CSV files (the format Chrome, Edge and Firefox use, with one more
+/// column for the key of one-time codes), and saved cards and identities in and out as a second CSV file
+/// of NEAT's own (no other browser has one).
 ///
-/// A CSV file holds every password in plain text. NEAT says so each time it makes one or reads
+/// A CSV file holds every password in plain text, and a file of cards every card number. NEAT says so each time it makes one or reads
 /// one, makes the person pass the gate before exporting, never overwrites an existing file, and
 /// offers to delete the file as soon as it has been written or imported.
 /// </summary>
@@ -124,12 +126,12 @@ public sealed partial class Opts
 
         return Block.Card(_skin,
             Block.Row(_skin, "Import from a file",
-                "A CSV file exported from Chrome, Edge or Firefox.",
+                "A CSV file exported from Chrome, Edge or Firefox, or from NEAT (logins with their one-time-code keys, cards, identities).",
                 Btn("Import...", ImportStart)),
             Block.Row(_skin, "Export to a file",
                 _prot == Protection.None
                     ? "Set a NEAT password first: nothing can be exported without a way to prove who is asking."
-                    : "Writes every saved password to a plain text file.",
+                    : "Writes every saved password and one-time-code key to a plain text file, and saved cards and identities to a second one.",
                 export));
     }
 
@@ -158,6 +160,14 @@ public sealed partial class Opts
         }
 
         var text = await File.ReadAllTextAsync(path);
+
+        // A file of cards and identities (made by NEAT) has its own way in.
+        if (Exchange.LooksLikeItems(text))
+        {
+            ImportItemsStart(path, text);
+            return;
+        }
+
         var read = Exchange.Read(text);
 
         if (read.Problem is { } problem)
@@ -213,6 +223,55 @@ public sealed partial class Opts
             Btn("Cancel", () => Start(CloseTask)));
     }
 
+    /// <summary>Shows what importing a file of cards and identities would do.</summary>
+    private void ImportItemsStart(string path, string text)
+    {
+        var read = Exchange.ReadItems(text);
+        if (read.Problem is { } problem)
+        {
+            Say(problem);
+            return;
+        }
+
+        var preview = App.Vault.ImportItems(read.Rows, false);
+        Say(string.Empty);
+
+        async Task Go()
+        {
+            var body = _body;
+            var rows = read.Rows;
+
+            var result = await Task.Run(() => App.Vault.ImportItems(rows, true));
+            if (_body != body)
+                return;
+
+            CloseTask();
+            Say("Imported " + result.Added + " card" + (result.Added == 1 ? " or identity." : "s and identities."));
+            await RefreshPass();
+
+            TaskDeleteFile(path, "The file you imported holds every card number in plain text.");
+        }
+
+        var lines = new StringBuilder();
+        lines.Append(read.Rows.Count + preview.Skipped + read.Skipped).Append(" cards and identities in the file: ");
+        lines.Append(preview.Added).Append(" new, ").Append(preview.Already).Append(" already saved");
+
+        if (preview.Skipped + read.Skipped > 0)
+            lines.Append(", ").Append(preview.Skipped + read.Skipped).Append(" skipped (not a card or identity)");
+
+        lines.Append('.');
+
+        ShowTask(
+            "Import cards and identities",
+            new UIElement[]
+            {
+                Explain(lines.ToString()),
+                Explain("The file holds every card number in plain text. After the import NEAT offers to delete it."),
+            },
+            Btn("Import", Go),
+            Btn("Cancel", () => Start(CloseTask)));
+    }
+
     /// <summary>The card that offers to delete a plain-text password file that is no longer needed.</summary>
     private void TaskDeleteFile(string path, string why)
     {
@@ -251,65 +310,95 @@ public sealed partial class Opts
                 return;
 
             var result = App.Vault.Export(access);
+            var items = App.Vault.ExportItems(access);
 
             // Never over a file that is already there.
             var folder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
             Directory.CreateDirectory(folder);
-            var path = Path.Combine(folder, "neat-passwords-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".csv");
+            var stamp = DateTime.Now.ToString("yyyyMMdd-HHmmss");
+            var path = Path.Combine(folder, "neat-passwords-" + stamp + ".csv");
 
             var bytes = new UTF8Encoding(false).GetBytes(Exchange.Write(result.Rows));
             await using (var stream = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None))
                 await stream.WriteAsync(bytes);
 
-            // The count only: what was exported is not logged.
-            Log.Write("pass", "exported " + result.Rows.Count + " logins");
+            var paths = new List<string> { path };
 
+            // Cards and identities are their own file: no other browser reads them, and a file that holds
+            // card numbers is better not mixed with the logins.
+            if (items.Rows.Count > 0)
+            {
+                var itemsPath = Path.Combine(folder, "neat-cards-" + stamp + ".csv");
+                var itemBytes = new UTF8Encoding(false).GetBytes(Exchange.WriteItems(items.Rows));
+                await using (var stream = new FileStream(itemsPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+                    await stream.WriteAsync(itemBytes);
+
+                paths.Add(itemsPath);
+            }
+
+            // The counts only: what was exported is not logged.
+            Log.Write("pass", "exported " + result.Rows.Count + " logins and " + items.Rows.Count + " cards and identities");
+
+            var damaged = result.Damaged + items.Damaged;
             CloseTask();
-            Say("Exported " + result.Rows.Count + " login" + (result.Rows.Count == 1 ? "." : "s.")
-                + (result.Damaged > 0 ? " " + result.Damaged + " could not be read and were left out." : string.Empty));
+            Say("Exported " + result.Rows.Count + " login" + (result.Rows.Count == 1 ? string.Empty : "s")
+                + (items.Rows.Count > 0 ? " and " + items.Rows.Count + " card" + (items.Rows.Count == 1 ? " or identity" : "s and identities") : string.Empty) + "."
+                + (damaged > 0 ? " " + damaged + " could not be read and were left out." : string.Empty));
 
-            TaskExported(path);
+            TaskExported(paths);
         }
 
         ShowTask(
             "Export logins",
             new UIElement[]
             {
-                Explain("This writes every saved password to a plain text file in your Downloads folder. "
-                    + "Anyone who can open that file can read all of them, and it can end up in backups and "
-                    + "cloud folders. Windows Hello (or your NEAT password) is asked first."),
+                Explain("This writes every saved password, and the keys of your one-time codes, to a plain text file in "
+                    + "your Downloads folder, and saved cards and identities to a second one. Anyone who can open "
+                    + "those files can read all of them, and they can end up in backups and cloud folders. "
+                    + "Windows Hello (or your NEAT password) is asked first."),
             },
             Btn("Export", Go),
             Btn("Cancel", () => Start(CloseTask)));
     }
 
-    private void TaskExported(string path)
+    private void TaskExported(IReadOnlyList<string> paths)
     {
+        var shown = new List<UIElement>();
+        foreach (var path in paths)
+            shown.Add(Explain(path));
+
+        shown.Add(Explain("The files hold every password and card number in plain text. Delete them as soon as you have used them."));
+
         ShowTask(
             "Passwords exported",
-            new UIElement[]
-            {
-                Explain(path),
-                Explain("The file holds every password in plain text. Delete it as soon as you have used it."),
-            },
+            shown.ToArray(),
             Btn("Show in folder", () =>
             {
-                Process.Start(new ProcessStartInfo("explorer.exe", "/select,\"" + path + "\"") { UseShellExecute = true });
+                Process.Start(new ProcessStartInfo("explorer.exe", "/select,\"" + paths[0] + "\"") { UseShellExecute = true });
                 return Task.CompletedTask;
             }),
-            Btn("Delete the file", () =>
+            Btn(paths.Count == 1 ? "Delete the file" : "Delete the files", () =>
             {
-                try
+                var left = 0;
+                foreach (var path in paths)
                 {
-                    File.Delete(path);
-                    CloseTask();
-                    Say("The file was deleted.");
+                    try
+                    {
+                        File.Delete(path);
+                    }
+                    catch (Exception ex)
+                    {
+                        left++;
+                        Log.Write("pass", "could not delete the file (" + ex.GetType().Name + ")");
+                    }
                 }
-                catch (Exception ex)
-                {
-                    Log.Write("pass", "could not delete the file (" + ex.GetType().Name + ")");
-                    Fail("The file could not be deleted. Delete it yourself.");
-                }
+
+                CloseTask();
+
+                if (left == 0)
+                    Say(paths.Count == 1 ? "The file was deleted." : "The files were deleted.");
+                else
+                    Fail("Some files could not be deleted. Delete them yourself.");
 
                 return Task.CompletedTask;
             }),

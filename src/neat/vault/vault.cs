@@ -430,13 +430,17 @@ public sealed partial class Vault : IDisposable
                 var user = Open(key, row, "user");
                 var pass = Open(key, row, "pass");
 
+                // The key of the one-time codes goes with the login; one that does not check out is left behind.
+                var otp = row.Otp is null ? null : Open(key, row, "otp");
+
                 if (user is null || pass is null)
                     damaged++;
                 else
-                    rows.Add(new ImportRow(row.Site, Encoding.UTF8.GetString(user), Encoding.UTF8.GetString(pass)));
+                    rows.Add(new ImportRow(row.Site, Encoding.UTF8.GetString(user), Encoding.UTF8.GetString(pass), otp is null ? null : Encoding.UTF8.GetString(otp)));
 
                 Seal.Wipe(user);
                 Seal.Wipe(pass);
+                Seal.Wipe(otp);
             }
 
             return new ExportResult(rows, damaged);
@@ -444,7 +448,7 @@ public sealed partial class Vault : IDisposable
     }
 
     /// <summary>
-    /// Adds logins from another browser's export, all in one write. A login that is already saved the
+    /// Adds logins from another browser's export (or NEAT's own, with its one-time-code keys), all in one write. A login that is already saved the
     /// same way is not added again; one for the same user name with another password is NOT
     /// replaced (the saved one stays, and it is counted as a conflict); everything else is added.
     /// With <paramref name="commit"/> false nothing is changed and the result says what would happen,
@@ -516,6 +520,7 @@ public sealed partial class Vault : IDisposable
                     Site = origin,
                     User = Sealed(key, id, origin, "user", item.User),
                     Pass = Sealed(key, id, origin, "pass", item.Password),
+                    Otp = item.Otp is null ? null : Sealed(key, id, origin, "otp", item.Otp),
                     Created = now,
                     Changed = now,
                 });

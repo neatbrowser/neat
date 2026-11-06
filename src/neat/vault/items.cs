@@ -386,6 +386,123 @@ public sealed partial class Vault
     }
 
     /// <summary>
+    /// Every saved card and identity with all its fields, for an export. Only for someone who has just passed the gate.
+    /// Items that do not check out are left out and counted.
+    /// </summary>
+    public ExportItemsResult ExportItems(Access access)
+    {
+        if (access is null || !access.Valid)
+            throw new UnauthorizedAccessException("The sign-in has expired.");
+
+        lock (_gate)
+        {
+            var key = Key();
+            var rows = new List<ItemRow>();
+            var damaged = 0;
+
+            foreach (var row in _file!.Items.OrderBy(r => r.Created))
+            {
+                var fields = OpenItem(key, row);
+                if (fields is null)
+                    damaged++;
+                else
+                    rows.Add(new ItemRow(row.Kind, fields));
+            }
+
+            return new ExportItemsResult(rows, damaged);
+        }
+    }
+
+    /// <summary>
+    /// Adds cards and identities from a file made by <see cref="Exchange.WriteItems"/>, all in one write. One that is
+    /// already saved is not added again: a card is the same when its number is, an identity when every field is.
+    /// With <paramref name="commit"/> false nothing is changed and the result says what would happen
+    /// (conflicts is always 0: nothing saved is ever replaced).
+    /// </summary>
+    public ImportResult ImportItems(IReadOnlyList<ItemRow> rows, bool commit)
+    {
+        lock (_gate)
+        {
+            var key = Key();
+
+            // What is saved, as one text each: a card by its number, an identity by all its fields.
+            var known = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var row in _file!.Items)
+            {
+                var fields = OpenItem(key, row);
+                if (fields is not null)
+                    known.Add(Same(row.Kind, fields));
+            }
+
+            var added = new List<VaultItemRow>();
+            int already = 0, skipped = 0;
+            var now = DateTimeOffset.UtcNow;
+
+            foreach (var item in rows)
+            {
+                Dictionary<string, string> clean;
+                try
+                {
+                    clean = ItemRules.Clean(item.Kind, item.Fields);
+                }
+                catch (ArgumentException)
+                {
+                    skipped++;
+                    continue;
+                }
+
+                if (!known.Add(Same(item.Kind, clean)))
+                {
+                    already++;
+                    continue;
+                }
+
+                if (!commit)
+                {
+                    added.Add(null!);
+                    continue;
+                }
+
+                var id = Guid.NewGuid();
+                added.Add(new VaultItemRow
+                {
+                    Id = id.ToString("N"),
+                    Kind = item.Kind,
+                    Data = Sealed(key, id, item.Kind, "data", JsonSerializer.Serialize(clean)),
+                    Created = now,
+                    Changed = now,
+                });
+            }
+
+            if (commit && added.Count > 0)
+            {
+                var before = _file.Items.Count;
+                _file.Items.AddRange(added);
+                try
+                {
+                    Write();
+                }
+                catch
+                {
+                    _file.Items.RemoveRange(before, added.Count);
+                    throw;
+                }
+            }
+
+            return new ImportResult(added.Count, already, 0, skipped);
+        }
+    }
+
+    // What makes two items the same: a card's number, an identity's every field (the label is only a name).
+    private static string Same(string kind, IReadOnlyDictionary<string, string> fields)
+    {
+        if (kind == ItemKind.Card)
+            return kind + "\n" + fields.GetValueOrDefault("number", string.Empty);
+
+        return kind + "\n" + string.Join("\n", fields.Where(f => f.Key != "label").OrderBy(f => f.Key, StringComparer.Ordinal).Select(f => f.Key + "=" + f.Value));
+    }
+
+    /// <summary>
     /// The fields of an item of the wanted kind, to be filled into the page the person is looking at when
     /// they pick it in the list (the same as <see cref="Fill"/> for a login: no sign-in, never shown).
     /// Null when there is no such item, it is of another kind, or it does not check out.

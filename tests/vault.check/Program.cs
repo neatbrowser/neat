@@ -70,6 +70,8 @@ internal static class Program
         Run("import adds new logins, skips saved ones and keeps conflicting ones", ImportLogins);
         Run("import in one write, and a preview changes nothing", ImportAtomic);
         Run("export needs a sign-in and gives every login", ExportLogins);
+        Run("one-time-code keys travel with the logins in a file", ExchangeKeys);
+        Run("cards and identities travel in a file of their own", ExchangeItems);
         Run("a changed password finds the entry it replaces", MatchOldPassword);
         Run("a change-password form keeps the old password with the held login", CaptureOld);
         Run("a server that refuses a login is told apart from background calls", LoginNetRefuses);
@@ -1857,6 +1859,91 @@ internal static class Program
         big.Open();
         var many = Enumerable.Range(0, 500).Select(i => new ImportRow($"https://s{i}.example", "u", "p" + i)).ToList();
         Expect(big.Import(many, true).Added == 500 && big.List().Count == 500, "500 logins at once");
+    }
+
+    private static void ExchangeKeys()
+    {
+        const string key = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";
+        var at = DateTimeOffset.FromUnixTimeSeconds(59);
+
+        var v = NewVault(TempFile());
+        v.Open();
+        var a = v.Add("https://a.example", "alice", "pw-a");
+        v.Add("https://b.example", "bob", "pw-b");
+        Expect(v.SetOtp(a, key), "set a key");
+
+        var rows = v.Export(Good).Rows;
+        Expect(rows.Single(r => r.User == "alice").Otp is { } k && k.StartsWith("otpauth://totp/"), "the key is exported in its canonical form");
+        Expect(rows.Single(r => r.User == "bob").Otp is null, "a login with no key has none");
+
+        var text = Exchange.Write(rows);
+        Expect(text.StartsWith("name,url,username,password,note,totp\r\n"), "a totp column after the usual ones");
+
+        var other = NewVault(TempFile());
+        other.Open();
+        Expect(other.Import(Exchange.Read(text).Rows, true).Added == 2, "both are imported");
+        var again = other.List().Single(l => l.User == "alice");
+        Expect(again.Otp && other.Code(again.Id, "https://a.example", at)?.Code == "287082", "the key came along and gives the same code");
+        Expect(!other.List().Single(l => l.User == "bob").Otp, "the other has none");
+
+        // Other programs name the column differently and write the key plain or as an address; a bad key costs only the key.
+        var csv = "url,username,password,login_totp\n"
+            + "https://x.example,u1,p1," + key + "\n"
+            + "https://y.example,u2,p2,otpauth://totp/y?secret=" + key + "&digits=8\n"
+            + "https://z.example,u3,p3,not a key!\n"
+            + "https://w.example,u4,p4,123456\n";
+        var read = Exchange.Read(csv);
+        Expect(read.Problem is null && read.Rows.Count == 4 && read.Skipped == 0, "every login is read");
+        Expect(read.Rows[0].Otp is not null && read.Rows[1].Otp is not null && read.Rows[2].Otp is null && read.Rows[3].Otp is null, "a key is kept only if it is one (a code is not a key)");
+
+        var third = NewVault(TempFile());
+        third.Open();
+        Expect(third.Import(read.Rows, true).Added == 4, "imported");
+        Expect(third.HasOtp("https://x.example") && third.HasOtp("https://y.example") && !third.HasOtp("https://z.example") && !third.HasOtp("https://w.example"), "keys follow their logins");
+
+        // A file without any key keeps the header Chrome writes.
+        Expect(Exchange.Write(new[] { new ImportRow("https://a.example", "u", "p") }).StartsWith("name,url,username,password,note\r\n"), "no column that is not needed");
+    }
+
+    private static void ExchangeItems()
+    {
+        var v = NewVault(TempFile());
+        v.Open();
+        v.AddItem(ItemKind.Card, Fields("number", "4111 1111 1111 1111", "expiry", "08/27", "cvc", "123", "holder", "A Nguyen", "label", "Visa"));
+        v.AddItem(ItemKind.Identity, Fields("first", "An", "last", "Nguyen", "email", "an@example.com", "city", "Hanoi, VN"));
+
+        var clock = new DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+        var spent = new Access(TimeSpan.FromMinutes(1), () => clock);
+        clock = clock.AddMinutes(5);
+        ExpectThrows<UnauthorizedAccessException>(() => v.ExportItems(spent), "an expired sign-in cannot export");
+        ExpectThrows<UnauthorizedAccessException>(() => v.ExportItems(null!), "no sign-in cannot export");
+
+        var export = v.ExportItems(Good);
+        Expect(export.Damaged == 0 && export.Rows.Count == 2, "two items");
+
+        var text = Exchange.WriteItems(export.Rows);
+        Expect(Exchange.LooksLikeItems(text), "it is known for a file of items");
+        Expect(!Exchange.LooksLikeItems(Exchange.Write(new[] { new ImportRow("https://a.example", "u", "p") })), "a file of logins is not");
+        Expect(!Exchange.LooksLikeItems("") && !Exchange.LooksLikeItems("name,note\nx,y"), "nor is an empty or another file");
+
+        var read = Exchange.ReadItems(text);
+        Expect(read.Problem is null && read.Skipped == 0 && read.Rows.Count == 2, "it reads back");
+        Expect(read.Rows.Single(r => r.Kind == ItemKind.Card).Fields["number"] == "4111111111111111" && read.Rows.Single(r => r.Kind == ItemKind.Identity).Fields["city"] == "Hanoi, VN", "with its fields, a comma too");
+
+        var other = NewVault(TempFile());
+        other.Open();
+        var preview = other.ImportItems(read.Rows, false);
+        Expect(preview == new ImportResult(2, 0, 0, 0) && !other.HasItems(ItemKind.Card), "a preview changes nothing");
+        Expect(other.ImportItems(read.Rows, true) == new ImportResult(2, 0, 0, 0), "imported");
+        var card = other.Items(ItemKind.Card).Single();
+        Expect(card.Label == "Visa" && other.FillItem(card.Id, ItemKind.Card)!["cvc"] == "123", "the card came whole");
+        Expect(other.ImportItems(read.Rows, true) == new ImportResult(0, 2, 0, 0), "the same file again adds nothing");
+
+        // What is not an item is skipped and counted, and a file of items is not read as logins.
+        var mixed = "type,label,number,first\ncard,Bad,12,\nvoucher,x,,\nidentity,Me,,An\n";
+        var m = Exchange.ReadItems(mixed);
+        Expect(m.Rows.Count == 1 && m.Skipped == 2 && m.Rows[0].Kind == ItemKind.Identity, "a bad card and a type that is not known are skipped");
+        Expect(Exchange.ReadItems("url,password\nhttps://a.example,p").Problem is not null && Exchange.ReadItems("").Problem is not null, "a file of logins or an empty one is a problem");
     }
 
     private static void ExportLogins()
