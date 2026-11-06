@@ -46,7 +46,10 @@ src/neat/
   win.cmd.cs        command bar: the box and its list of suggestions, arrow keys
   win.sess.cs       session: open tabs kept for the next start, closed tabs (Ctrl+Shift+T)
   win.full.cs       full screen (F11)
-  web/env.cs        app folders; points WebView2 at the bundled runtime
+  win.ext.cs        extensions: tells web/ext.cs which tab's profile to use
+  web/env.cs        app folders; points WebView2 at the bundled runtime; the one shared WebView2 environment (extensions on)
+  web/ext.cs        browser extensions: availability, and list/add/enable/remove as plain data
+  web/extprof.cs    the real profile behind ext.cs (the only place that touches WebView2 extension objects)
   web/tab.cs        one tab: its web view, title, address and favicon
   look/look.cs      window colour: turns the saved tint into the window gradient
   look/win.paint.cs colour menu: dark/light, gradient and opacity sliders, swatches
@@ -120,6 +123,7 @@ tools/fetch-ads.ps1 downloads neat_adblock.dll and the filter lists into ads-dl\
 tests/ads.check/    the blocker's self-checks: C# pieces (dotnet run) and the page script (node page.check.mjs)
 tests/fp.check/     the fingerprint protection's self-checks: C# pieces (dotnet run) and the page script in a real Chromium (node farble.check.mjs, needs Playwright)
 tests/vault.check/  the vault's self-check (plain asserts, no packages), run by CI before the build
+tests/ext.check/    the extension wrappers' self-check against a fake profile (plain asserts, no packages), run by CI before the build
 tests/capture.check/ the page scripts' self-check: made-up login forms in jsdom (needs Node; npm ci, npm test)
 ```
 

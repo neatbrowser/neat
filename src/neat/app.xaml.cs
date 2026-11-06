@@ -53,6 +53,10 @@ public partial class App : Application
 
         // Browser arguments that come from settings, in place before the first web view is created.
         Env.AddBrowserArguments(Fp.BrowserArguments(Cfg.Cur.Fp));
+
+        // The shared web view environment starts now, so it is ready by the time the first tab asks.
+        // It reads the variables set above, which is why it comes after them. Get never throws.
+        _ = Env.Get();
         Sess = new Session(Path.Combine(Env.Root, "session.json"));
         Find = new Search(Cfg);
         Look = new Look(Cfg);

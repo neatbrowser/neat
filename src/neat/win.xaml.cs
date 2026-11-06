@@ -39,6 +39,7 @@ public sealed partial class Win : Window
         LibInit();
         BlkInit();
         FpInit();
+        ExtInit();
 
         // The first tab opens once the window is up.
         root.Loaded += OnLoaded;
@@ -62,7 +63,7 @@ public sealed partial class Win : Window
             var ver = core.Environment.BrowserVersionString;
             WebVer = ver;   // for the settings window's About page (win.opts.cs)
             var src = Env.UsesFixed ? "bundled runtime" : "system runtime";
-            Log.Write("webview", $"WebView2 {ver} ({src})");
+            Log.Write("webview", $"WebView2 {ver} ({src}), extensions {(Ext.Can ? "on" : "off")}");
         }
     }
 
@@ -90,6 +91,7 @@ public sealed partial class Win : Window
         bar.LayoutUpdated -= BarLayout;
         BlkStop();
         FpStop();
+        ExtStop();
 
         if (AppWindow.Presenter is not OverlappedPresenter p)
             return;
@@ -133,7 +135,7 @@ public sealed partial class Win : Window
 
         try
         {
-            await tab.View.EnsureCoreWebView2Async();
+            await Env.Start(tab.View);
         }
         catch (Exception ex)
         {
